@@ -287,6 +287,18 @@ function makeCard(label, value) {
   return el;
 }
 
+function makeTileGroup(title, cards) {
+  const group = document.createElement("section");
+  group.className = "tile-group card";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const tiles = document.createElement("div");
+  tiles.className = "tiles";
+  tiles.append(...cards);
+  group.append(heading, tiles);
+  return group;
+}
+
 function renderBarChart(title, entries, formatter = (v) => v) {
   const template = document.getElementById("chart-template");
   const node = template.content.firstElementChild.cloneNode(true);
@@ -314,17 +326,28 @@ function renderDashboard() {
   const wrapper = document.createElement("div");
   wrapper.className = "page-section";
 
-  const tiles = document.createElement("div");
-  tiles.className = "tiles";
   const contingencyPValue = calcContingencyPValue();
 
-  tiles.append(
-    makeCard("Open risks", metrics.openCount),
-    makeCard("Expected cost exposure", fmtNumber(metrics.expectedCost, true)),
-    makeCard("Expected schedule exposure (days)", metrics.expectedDays.toFixed(1)),
-    makeCard("Top risk", metrics.topRisk ? metrics.topRisk.title : "N/A"),
+  const projectGroup = makeTileGroup("Project Details", [
+    makeCard("Client", state.data.project.client || "N/A"),
+    makeCard("Baseline cost", fmtNumber(state.data.project.baseline_cost, true)),
+    makeCard("Contingency", fmtNumber(state.data.project.contingency, true)),
     makeCard("Contingency current P-value", formatPValue(contingencyPValue))
-  );
+  ]);
+
+  const commercialGroup = makeTileGroup("Commercial", [
+    makeCard("Expected cost exposure", fmtNumber(metrics.expectedCost, true)),
+    makeCard("Top risk", metrics.topRisk ? metrics.topRisk.title : "N/A")
+  ]);
+
+  const scheduleGroup = makeTileGroup("Schedule", [
+    makeCard("Open risks", metrics.openCount),
+    makeCard("Expected schedule exposure (days)", metrics.expectedDays.toFixed(1))
+  ]);
+
+  const groupedTiles = document.createElement("div");
+  groupedTiles.className = "grid-2";
+  groupedTiles.append(projectGroup, commercialGroup, scheduleGroup);
 
   const byCategory = categories.map((category) => ({
     label: category,
@@ -346,7 +369,7 @@ function renderDashboard() {
     renderBarChart("Risk count by status", byStatus, (v) => String(v))
   );
 
-  wrapper.append(tiles, chartGrid);
+  wrapper.append(groupedTiles, chartGrid);
   pageContent.appendChild(wrapper);
 }
 
@@ -587,23 +610,29 @@ function renderOutputs() {
     <p>Current contingency (${fmtNumber(state.data.project.contingency, true)}) aligns to: <strong>${formatPValue(contingencyPValue)}</strong></p>
   `;
 
-  const costTiles = document.createElement("div");
-  costTiles.className = "tiles";
-  costTiles.append(
+  const projectTiles = makeTileGroup("Project Details", [
+    makeCard("Baseline cost", fmtNumber(state.data.project.baseline_cost, true)),
+    makeCard("Contingency", fmtNumber(state.data.project.contingency, true)),
+    makeCard("Contingency current P-value", formatPValue(contingencyPValue))
+  ]);
+
+  const commercialTiles = makeTileGroup("Commercial", [
     makeCard("Mean Cost", fmtNumber(simulation.costStats.mean, true)),
     makeCard("P50 Cost", fmtNumber(simulation.costStats.p50, true)),
     makeCard("P80 Cost", fmtNumber(simulation.costStats.p80, true)),
     makeCard("P90 Cost", fmtNumber(simulation.costStats.p90, true))
-  );
+  ]);
 
-  const scheduleTiles = document.createElement("div");
-  scheduleTiles.className = "tiles";
-  scheduleTiles.append(
+  const scheduleTiles = makeTileGroup("Schedule", [
     makeCard("Mean Schedule (days)", simulation.scheduleStats.mean.toFixed(1)),
     makeCard("P50 Schedule (days)", simulation.scheduleStats.p50.toFixed(1)),
     makeCard("P80 Schedule (days)", simulation.scheduleStats.p80.toFixed(1)),
     makeCard("P90 Schedule (days)", simulation.scheduleStats.p90.toFixed(1))
-  );
+  ]);
+
+  const groupedOutputTiles = document.createElement("div");
+  groupedOutputTiles.className = "grid-2";
+  groupedOutputTiles.append(projectTiles, commercialTiles, scheduleTiles);
 
   const costStatsCard = document.createElement("div");
   costStatsCard.className = "card";
@@ -635,7 +664,7 @@ function renderOutputs() {
     renderBarChart("Schedule Distribution (Histogram)", simulation.scheduleHistogram, (v) => `${v}`)
   );
 
-  pageContent.append(comparison, costTiles, scheduleTiles);
+  pageContent.append(comparison, groupedOutputTiles);
   pageContent.appendChild(chartGrid);
   pageContent.append(costStatsCard, scheduleStatsCard);
 }

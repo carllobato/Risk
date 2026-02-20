@@ -141,6 +141,16 @@ body {
   gap: 1rem;
 }
 
+.tile-group {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.tile-group h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
 .tile-value {
   font-size: 1.6rem;
   margin-top: 0.45rem;
