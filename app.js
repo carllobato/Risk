@@ -1,5 +1,4 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
-const THEME_KEY = "risk-mvp-theme";
 const APP_VERSION = "v1.2.1 (2026-02-20 21:55 UTC)";
 const NAV_ITEMS = ["Dashboard", "Project Data / Inputs", "Risk Register", "Outputs"];
 

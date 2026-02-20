@@ -45,6 +45,7 @@ body {
   border-right: 1px solid var(--border);
   padding: 1.25rem;
   background: var(--sidebar-bg);
+  background: #f8fafc;
 }
 
 .brand {
@@ -86,6 +87,7 @@ body {
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border);
   background: var(--header-bg);
+  background: #fff;
 }
 
 .top-header h1 {
@@ -262,6 +264,7 @@ td {
 
 tr:hover {
   background: var(--sidebar-bg);
+  background: #f8fafc;
 }
 
 .status-badge {
@@ -332,6 +335,7 @@ tr:hover {
   font-size: 0.78rem;
   color: var(--muted);
   background: var(--card);
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0.2rem 0.5rem;
