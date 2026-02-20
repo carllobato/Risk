@@ -153,25 +153,6 @@ const closeModalBtn = document.getElementById("close-modal");
 const riskForm = document.getElementById("risk-form");
 const riskModalTitle = document.getElementById("risk-modal-title");
 const versionBadge = document.getElementById("app-version");
-const themeToggle = document.getElementById("theme-toggle");
-
-
-function applyTheme(theme) {
-  const isDark = theme === "dark";
-  document.body.classList.toggle("dark-theme", isDark);
-  themeToggle.checked = isDark;
-}
-
-function initTheme() {
-  const storedTheme = localStorage.getItem(THEME_KEY) || "light";
-  applyTheme(storedTheme);
-}
-
-function handleThemeToggle() {
-  const nextTheme = themeToggle.checked ? "dark" : "light";
-  localStorage.setItem(THEME_KEY, nextTheme);
-  applyTheme(nextTheme);
-}
 
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -626,13 +607,10 @@ function render() {
 }
 
 closeModalBtn.onclick = closeRiskModal;
-themeToggle.onchange = handleThemeToggle;
-
 modalBackdrop.onclick = (event) => {
   if (event.target === modalBackdrop) {
     closeRiskModal();
   }
 };
 
-initTheme();
 render();
