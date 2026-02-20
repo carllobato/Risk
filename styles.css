@@ -138,7 +138,8 @@ body {
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
+  gap: 1.25rem;
+  row-gap: 1.25rem;
 }
 
 .tile-group {
@@ -149,6 +150,10 @@ body {
 .tile-group h3 {
   margin: 0;
   font-size: 1rem;
+}
+
+.tile-group .tiles {
+  margin-top: 0.25rem;
 }
 
 .tile-value {
@@ -165,7 +170,8 @@ body {
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem;
+  gap: 1.25rem;
+  row-gap: 1.25rem;
 }
 
 .chart-bars {
