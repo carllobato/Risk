@@ -1,5 +1,4 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
-const THEME_KEY = "risk-mvp-theme";
 const APP_VERSION = "v1.2.1 (2026-02-20 21:55 UTC)";
 const NAV_ITEMS = ["Dashboard", "Project Data / Inputs", "Risk Register", "Outputs"];
 
@@ -155,15 +154,12 @@ const riskForm = document.getElementById("risk-form");
 const riskModalTitle = document.getElementById("risk-modal-title");
 const versionBadge = document.getElementById("app-version");
 const themeToggle = document.getElementById("theme-toggle");
-const themeToggleLabel = document.getElementById("theme-toggle-label");
 
 
 function applyTheme(theme) {
   const isDark = theme === "dark";
   document.body.classList.toggle("dark-theme", isDark);
-  document.body.dataset.theme = isDark ? "dark" : "light";
   themeToggle.checked = isDark;
-  themeToggleLabel.textContent = isDark ? "Dark mode: On" : "Dark mode: Off";
 }
 
 function initTheme() {
@@ -630,7 +626,7 @@ function render() {
 }
 
 closeModalBtn.onclick = closeRiskModal;
-themeToggle.addEventListener("change", handleThemeToggle);
+themeToggle.onchange = handleThemeToggle;
 
 modalBackdrop.onclick = (event) => {
   if (event.target === modalBackdrop) {
