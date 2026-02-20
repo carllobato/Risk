@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Risk Management MVP</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <h2 class="brand">Risk MVP</h2>
+        <nav id="nav-menu" class="nav-menu"></nav>
+      </aside>
+      <div class="main-shell">
+        <header class="top-header">
+          <h1 id="project-title">Demo Project</h1>
+          <p id="last-updated"></p>
+        </header>
+        <main id="page-content" class="page-content"></main>
+      </div>
+    </div>
+
+    <div id="modal-backdrop" class="modal-backdrop hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="risk-modal-title">Add Risk</h3>
+          <button id="close-modal" class="ghost-btn">✕</button>
+        </div>
+        <form id="risk-form" class="risk-form"></form>
+      </div>
+    </div>
+
+    <template id="chart-template">
+      <div class="chart-card card">
+        <h3></h3>
+        <div class="chart-bars"></div>
+      </div>
+    </template>
+
+    <div id="app-version" class="app-version">v0.0.0</div>
+
+    <script src="simulation.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
