@@ -1,4 +1,5 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
+const THEME_KEY = "risk-mvp-theme";
 const APP_VERSION = "v1.2.1 (2026-02-20 21:55 UTC)";
 const NAV_ITEMS = ["Dashboard", "Project Data / Inputs", "Risk Register", "Outputs"];
 
@@ -153,6 +154,28 @@ const closeModalBtn = document.getElementById("close-modal");
 const riskForm = document.getElementById("risk-form");
 const riskModalTitle = document.getElementById("risk-modal-title");
 const versionBadge = document.getElementById("app-version");
+const themeToggle = document.getElementById("theme-toggle");
+const themeToggleLabel = document.getElementById("theme-toggle-label");
+
+
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+  document.body.classList.toggle("dark-theme", isDark);
+  document.body.dataset.theme = isDark ? "dark" : "light";
+  themeToggle.checked = isDark;
+  themeToggleLabel.textContent = isDark ? "Dark mode: On" : "Dark mode: Off";
+}
+
+function initTheme() {
+  const storedTheme = localStorage.getItem(THEME_KEY) || "light";
+  applyTheme(storedTheme);
+}
+
+function handleThemeToggle() {
+  const nextTheme = themeToggle.checked ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, nextTheme);
+  applyTheme(nextTheme);
+}
 
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -171,6 +194,7 @@ function loadData() {
 
 function saveData() {
   state.data.project.updated_at = new Date().toISOString();
+  state.simulation.result = null;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   render();
 }
@@ -205,6 +229,41 @@ function calcMetrics() {
     .sort((a, b) => b.probability * b.impact_cost_mid - a.probability * a.impact_cost_mid)[0];
 
   return { openCount, expectedCost, expectedDays, topRisk };
+}
+
+function calcContingencyPValue() {
+  const contingency = Number(state.data.project.contingency || 0);
+  const results = state.simulation.result?.costResults;
+
+  if (!results || !results.length) {
+    return null;
+  }
+
+  const atOrBelow = results.filter((value) => value <= contingency).length;
+  const percentile = (atOrBelow / results.length) * 100;
+
+  return {
+    percentile,
+    contingency,
+    runs: results.length
+  };
+}
+
+function formatPValue(pValue) {
+  if (!pValue) {
+    return "P0";
+  }
+
+  return `P${pValue.percentile.toFixed(0)}`;
+}
+
+function ensureSimulationResult() {
+  if (!state.simulation.result && window.SimulationEngine) {
+    state.simulation.result = window.SimulationEngine.runMonteCarlo(
+      state.data.risks,
+      state.simulation.iterations
+    );
+  }
 }
 
 function renderNav() {
@@ -257,11 +316,14 @@ function renderDashboard() {
 
   const tiles = document.createElement("div");
   tiles.className = "tiles";
+  const contingencyPValue = calcContingencyPValue();
+
   tiles.append(
     makeCard("Open risks", metrics.openCount),
     makeCard("Expected cost exposure", fmtNumber(metrics.expectedCost, true)),
     makeCard("Expected schedule exposure (days)", metrics.expectedDays.toFixed(1)),
-    makeCard("Top risk", metrics.topRisk ? metrics.topRisk.title : "N/A")
+    makeCard("Top risk", metrics.topRisk ? metrics.topRisk.title : "N/A"),
+    makeCard("Contingency current P-value", formatPValue(contingencyPValue))
   );
 
   const byCategory = categories.map((category) => ({
@@ -319,6 +381,7 @@ function renderProjectData() {
       contingency: Number(form.get("contingency")),
       updated_at: new Date().toISOString()
     };
+    state.simulation.result = null;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
     render();
   };
@@ -513,12 +576,15 @@ function renderOutputs() {
 
   const simulation = state.simulation.result;
 
+  const contingencyPValue = calcContingencyPValue();
+
   const comparison = document.createElement("div");
   comparison.className = "card";
   comparison.innerHTML = `
     <h3>Deterministic vs Simulated Cost</h3>
     <p>Deterministic Expected Cost: <strong>${fmtNumber(metrics.expectedCost, true)}</strong></p>
     <p>Simulated Mean Cost: <strong>${fmtNumber(simulation.costStats.mean, true)}</strong></p>
+    <p>Current contingency (${fmtNumber(state.data.project.contingency, true)}) aligns to: <strong>${formatPValue(contingencyPValue)}</strong></p>
   `;
 
   const costTiles = document.createElement("div");
@@ -594,6 +660,7 @@ function render() {
   lastUpdated.textContent = `Project updated: ${fmtDate(state.data.project.updated_at)}`;
   pageContent.innerHTML = "";
   renderNav();
+  ensureSimulationResult();
 
   if (state.page === "Dashboard") {
     renderDashboard();
@@ -607,10 +674,13 @@ function render() {
 }
 
 closeModalBtn.onclick = closeRiskModal;
+themeToggle.addEventListener("change", handleThemeToggle);
+
 modalBackdrop.onclick = (event) => {
   if (event.target === modalBackdrop) {
     closeRiskModal();
   }
 };
 
+initTheme();
 render();
