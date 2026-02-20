@@ -1,5 +1,4 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
-const APP_VERSION = "v1.2.0";
 const NAV_ITEMS = ["Dashboard", "Project Data / Inputs", "Risk Register", "Outputs"];
 
 const categories = ["Cost", "Schedule", "Commercial", "Scope", "Delivery"];
@@ -136,12 +135,7 @@ const defaultData = {
 const state = {
   data: loadData(),
   page: "Dashboard",
-  editingRiskId: null,
-  simulation: {
-    isRunning: false,
-    result: null,
-    iterations: 100
-  }
+  editingRiskId: null
 };
 
 const navMenu = document.getElementById("nav-menu");
@@ -152,7 +146,6 @@ const modalBackdrop = document.getElementById("modal-backdrop");
 const closeModalBtn = document.getElementById("close-modal");
 const riskForm = document.getElementById("risk-form");
 const riskModalTitle = document.getElementById("risk-modal-title");
-const versionBadge = document.getElementById("app-version");
 
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -479,118 +472,51 @@ function closeRiskModal() {
 
 function renderOutputs() {
   const metrics = calcMetrics();
-  const controls = document.createElement("div");
-  controls.className = "card";
-  controls.innerHTML = `
-    <div class="actions">
-      <h3 style="margin-right:auto;">Simulation Outputs</h3>
-      <button id="run-simulation">Run Simulation</button>
-    </div>
-    <p class="tile-label">Simulation runs 100 probabilistic iterations based on risk likelihood and impact ranges.</p>
+  const section = document.createElement("div");
+  section.className = "grid-2";
+
+  const ranked = state.data.risks
+    .slice()
+    .sort((a, b) => b.probability * b.impact_cost_mid - a.probability * a.impact_cost_mid)
+    .slice(0, 10);
+
+  const listCard = document.createElement("div");
+  listCard.className = "card";
+  listCard.innerHTML = `
+    <h3>Top Risks by Expected Cost</h3>
+    <ol>
+      ${ranked
+        .map(
+          (risk) =>
+            `<li>${risk.title} — ${fmtNumber(risk.probability * risk.impact_cost_mid, true)} expected</li>`
+        )
+        .join("")}
+    </ol>
+    <p class="note">Monte Carlo simulation module coming next.</p>
   `;
 
-  const runBtn = controls.querySelector("#run-simulation");
-  runBtn.disabled = state.simulation.isRunning;
-  runBtn.textContent = state.simulation.isRunning ? "Running..." : "Run Simulation";
-  runBtn.onclick = runSimulation;
-  pageContent.appendChild(controls);
-
-  if (state.simulation.isRunning) {
-    const loadingCard = document.createElement("div");
-    loadingCard.className = "card";
-    loadingCard.innerHTML = `<p class="tile-label">Running ${state.simulation.iterations} iterations...</p>`;
-    pageContent.appendChild(loadingCard);
-    return;
-  }
-
-  if (!state.simulation.result) {
-    const emptyCard = document.createElement("div");
-    emptyCard.className = "card";
-    emptyCard.innerHTML = `<p class="tile-label">Click <strong>Run Simulation</strong> to generate probabilistic cost and schedule distributions.</p>`;
-    pageContent.appendChild(emptyCard);
-    return;
-  }
-
-  const simulation = state.simulation.result;
-
-  const comparison = document.createElement("div");
-  comparison.className = "card";
-  comparison.innerHTML = `
-    <h3>Deterministic vs Simulated Cost</h3>
-    <p>Deterministic Expected Cost: <strong>${fmtNumber(metrics.expectedCost, true)}</strong></p>
-    <p>Simulated Mean Cost: <strong>${fmtNumber(simulation.costStats.mean, true)}</strong></p>
+  const summaryCard = document.createElement("div");
+  summaryCard.className = "card";
+  summaryCard.innerHTML = `
+    <h3>Exposure Summary</h3>
+    <p>Total expected cost exposure: <strong>${fmtNumber(metrics.expectedCost, true)}</strong></p>
+    <p>Total expected schedule exposure: <strong>${metrics.expectedDays.toFixed(1)} days</strong></p>
   `;
 
-  const costTiles = document.createElement("div");
-  costTiles.className = "tiles";
-  costTiles.append(
-    makeCard("Mean Cost", fmtNumber(simulation.costStats.mean, true)),
-    makeCard("P50 Cost", fmtNumber(simulation.costStats.p50, true)),
-    makeCard("P80 Cost", fmtNumber(simulation.costStats.p80, true)),
-    makeCard("P90 Cost", fmtNumber(simulation.costStats.p90, true))
-  );
+  const categoryData = categories.map((category) => ({
+    label: category,
+    value: getActiveRisks().reduce(
+      (sum, risk) => (risk.category === category ? sum + risk.probability * risk.impact_cost_mid : sum),
+      0
+    )
+  }));
 
-  const scheduleTiles = document.createElement("div");
-  scheduleTiles.className = "tiles";
-  scheduleTiles.append(
-    makeCard("Mean Schedule (days)", simulation.scheduleStats.mean.toFixed(1)),
-    makeCard("P50 Schedule (days)", simulation.scheduleStats.p50.toFixed(1)),
-    makeCard("P80 Schedule (days)", simulation.scheduleStats.p80.toFixed(1)),
-    makeCard("P90 Schedule (days)", simulation.scheduleStats.p90.toFixed(1))
-  );
-
-  const costStatsCard = document.createElement("div");
-  costStatsCard.className = "card";
-  costStatsCard.innerHTML = `
-    <h3>Cost Statistics</h3>
-    <p>Mean: <strong>${fmtNumber(simulation.costStats.mean, true)}</strong></p>
-    <p>Median: <strong>${fmtNumber(simulation.costStats.median, true)}</strong></p>
-    <p>P50: <strong>${fmtNumber(simulation.costStats.p50, true)}</strong></p>
-    <p>P80: <strong>${fmtNumber(simulation.costStats.p80, true)}</strong></p>
-    <p>P90: <strong>${fmtNumber(simulation.costStats.p90, true)}</strong></p>
-    <p>Min: <strong>${fmtNumber(simulation.costStats.min, true)}</strong></p>
-    <p>Max: <strong>${fmtNumber(simulation.costStats.max, true)}</strong></p>
-  `;
-
-  const scheduleStatsCard = document.createElement("div");
-  scheduleStatsCard.className = "card";
-  scheduleStatsCard.innerHTML = `
-    <h3>Schedule Statistics</h3>
-    <p>Mean: <strong>${simulation.scheduleStats.mean.toFixed(1)} days</strong></p>
-    <p>P50: <strong>${simulation.scheduleStats.p50.toFixed(1)} days</strong></p>
-    <p>P80: <strong>${simulation.scheduleStats.p80.toFixed(1)} days</strong></p>
-    <p>P90: <strong>${simulation.scheduleStats.p90.toFixed(1)} days</strong></p>
-  `;
-
-  const chartGrid = document.createElement("div");
-  chartGrid.className = "grid-2";
-  chartGrid.append(
-    renderBarChart("Cost Distribution (Histogram)", simulation.costHistogram, (v) => `${v}`),
-    renderBarChart("Schedule Distribution (Histogram)", simulation.scheduleHistogram, (v) => `${v}`)
-  );
-
-  pageContent.append(comparison, costTiles, scheduleTiles);
-  pageContent.appendChild(chartGrid);
-  pageContent.append(costStatsCard, scheduleStatsCard);
-}
-
-function runSimulation() {
-  state.simulation.isRunning = true;
-  render();
-
-  setTimeout(() => {
-    state.simulation.result = window.SimulationEngine.runMonteCarlo(
-      state.data.risks,
-      state.simulation.iterations
-    );
-    state.simulation.isRunning = false;
-    render();
-  }, 30);
+  section.append(listCard, summaryCard, renderBarChart("Category breakdown", categoryData, (v) => fmtNumber(v, true)));
+  pageContent.appendChild(section);
 }
 
 function render() {
   projectTitle.textContent = state.data.project.name;
-  versionBadge.textContent = APP_VERSION;
   lastUpdated.textContent = `Project updated: ${fmtDate(state.data.project.updated_at)}`;
   pageContent.innerHTML = "";
   renderNav();
