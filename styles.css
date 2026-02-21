@@ -219,6 +219,45 @@ body {
   font-size: 0.9rem;
 }
 
+
+.summary-list-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.summary-list-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.summary-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.summary-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.summary-label {
+  color: var(--muted);
+}
+
+.summary-value {
+  font-weight: 600;
+  text-align: right;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

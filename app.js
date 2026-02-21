@@ -12,6 +12,8 @@ const defaultData = {
     id: "p-1",
     name: "Demo Project",
     client: "Northwind Infrastructure",
+    project_number: "GSQ-001",
+    location: "Sydney",
     currency: "USD",
     baseline_cost: 12000000,
     contingency: 950000,
@@ -197,6 +199,12 @@ function loadData() {
     if (!parsed.project.units) {
       parsed.project.units = "Days";
     }
+    if (!parsed.project.project_number) {
+      parsed.project.project_number = "GSQ-001";
+    }
+    if (!parsed.project.location) {
+      parsed.project.location = "Sydney";
+    }
     if (!parsed.project.completion_date) {
       parsed.project.completion_date = "2027-12-31";
     }
@@ -368,6 +376,19 @@ function makeTileGroup(title, cards) {
   tiles.append(...cards);
   group.append(heading, tiles);
   return group;
+}
+
+function makeListCard(title, rows) {
+  const card = document.createElement("section");
+  card.className = "card summary-list-card";
+  const safeRows = rows
+    .map(
+      (row) =>
+        `<div class="summary-row"><span class="summary-label">${row.label}</span><span class="summary-value">${row.value}</span></div>`
+    )
+    .join("");
+  card.innerHTML = `<h3>${title}</h3><div class="summary-list">${safeRows}</div>`;
+  return card;
 }
 
 function renderBarChart(title, entries, formatter = (v) => v) {
@@ -605,45 +626,57 @@ function renderDashboard() {
 
   const contingencyPValue = calcContingencyPValue();
 
-  const projectGroup = makeTileGroup("Project Details", [
-    makeCard("Client", state.data.project.client || "N/A"),
-    makeCard("Baseline cost", fmtNumber(state.data.project.baseline_cost, true)),
-    makeCard("Contingency", fmtNumber(state.data.project.contingency, true)),
-    makeCard("Contingency current P-value", formatPValue(contingencyPValue))
+  const topFiveRisks = getActiveRisks()
+    .slice()
+    .sort((a, b) => b.probability * b.impact_cost_mid - a.probability * a.impact_cost_mid)
+    .slice(0, 5);
+
+  const projectGroup = makeListCard("Project Details", [
+    { label: "Client", value: state.data.project.client || "N/A" },
+    { label: "Project Number", value: state.data.project.project_number || "N/A" },
+    { label: "Project Name", value: state.data.project.name || "N/A" },
+    { label: "Location", value: state.data.project.location || "N/A" },
+    { label: "Project Value", value: fmtNumber(state.data.project.baseline_cost, true) },
+    { label: "Contingency Fund", value: fmtNumber(state.data.project.contingency, true) },
+    { label: "Completion Date", value: state.data.project.completion_date || "N/A" }
   ]);
 
-  const riskOutputsGroup = makeTileGroup("Risk Outputs", [
-    makeCard("Open risks", metrics.openCount),
-    makeCard("Expected cost exposure", fmtNumber(metrics.expectedCost, true)),
-    makeCard("Expected schedule exposure", metrics.expectedDays.toFixed(1)),
-    makeCard("Top risk", metrics.topRisk ? metrics.topRisk.title : "N/A")
+  const riskAllocationGroup = makeListCard("Risk Allocation", [
+    { label: "Current P Value", value: formatPValue(contingencyPValue) },
+    { label: "Open Risks", value: String(metrics.openCount) },
+    { label: "Expected Cost Exposure", value: fmtNumber(metrics.expectedCost, true) },
+    { label: "Expected Schedule Exposure", value: `${metrics.expectedDays.toFixed(1)} ${state.data.project.units.toLowerCase()}` }
   ]);
+
+  const topRiskRows =
+    topFiveRisks.length > 0
+      ? topFiveRisks.map((risk, index) => ({
+          label: `${index + 1}. ${risk.title}`,
+          value: `${fmtNumber(risk.probability * risk.impact_cost_mid, true)} | ${(
+            risk.probability * risk.impact_days_mid
+          ).toFixed(1)} ${state.data.project.units.toLowerCase()}`
+        }))
+      : [{ label: "No active risks", value: "N/A" }];
+
+  const topRisksGroup = makeListCard("Top 5 Risks (Cost | Programme)", topRiskRows);
+
+  const statusCounts = statuses.map((status) => ({
+    label: status,
+    value: String(state.data.risks.filter((risk) => risk.status === status).length)
+  }));
+  const statusGroup = makeListCard("Risk Status", statusCounts);
+
+  const categoryCounts = categories.map((category) => ({
+    label: category,
+    value: String(state.data.risks.filter((risk) => risk.category === category).length)
+  }));
+  const categoryGroup = makeListCard("Risks per Category", categoryCounts);
 
   const groupedTiles = document.createElement("div");
   groupedTiles.className = "grid-2";
-  groupedTiles.append(projectGroup, riskOutputsGroup);
+  groupedTiles.append(projectGroup, riskAllocationGroup, topRisksGroup, statusGroup, categoryGroup);
 
-  const byCategory = categories.map((category) => ({
-    label: category,
-    value: getActiveRisks().reduce(
-      (sum, risk) => (risk.category === category ? sum + risk.probability * risk.impact_cost_mid : sum),
-      0
-    )
-  }));
-
-  const byStatus = statuses.map((status) => ({
-    label: status,
-    value: state.data.risks.filter((risk) => risk.status === status).length
-  }));
-
-  const chartGrid = document.createElement("div");
-  chartGrid.className = "grid-2";
-  chartGrid.append(
-    renderBarChart("Cost exposure by category", byCategory, (v) => fmtNumber(v, true)),
-    renderBarChart("Risk count by status", byStatus, (v) => String(v))
-  );
-
-  wrapper.append(groupedTiles, chartGrid);
+  wrapper.append(groupedTiles);
   pageContent.appendChild(wrapper);
 }
 
@@ -681,6 +714,22 @@ function renderSettings() {
     <section class="card settings-section">
       <h3>Project Settings</h3>
       <form id="project-settings-form" class="settings-list-form">
+        <div class="setting-row">
+          <label for="settings-project-name">Project Name</label>
+          <input id="settings-project-name" name="name" value="${state.data.project.name}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-client">Client</label>
+          <input id="settings-client" name="client" value="${state.data.project.client || ""}" />
+        </div>
+        <div class="setting-row">
+          <label for="settings-project-number">Project Number</label>
+          <input id="settings-project-number" name="project_number" value="${state.data.project.project_number || ""}" />
+        </div>
+        <div class="setting-row">
+          <label for="settings-location">Location</label>
+          <input id="settings-location" name="location" value="${state.data.project.location || ""}" />
+        </div>
         <div class="setting-row">
           <label for="settings-project-value">Project Value</label>
           <input id="settings-project-value" name="baseline_cost" type="number" min="0" step="1" value="${state.data.project.baseline_cost}" required />
@@ -729,6 +778,10 @@ function renderSettings() {
     const form = new FormData(event.target);
     state.data.project = {
       ...state.data.project,
+      name: form.get("name"),
+      client: form.get("client"),
+      project_number: form.get("project_number"),
+      location: form.get("location"),
       baseline_cost: Number(form.get("baseline_cost")),
       contingency: Number(form.get("contingency")),
       completion_date: form.get("completion_date"),
