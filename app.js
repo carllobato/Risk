@@ -444,6 +444,33 @@ function blendStats(from = {}, to = {}, progress = 1) {
   return output;
 }
 
+function blendRiskContributions(from = [], to = [], progress = 1) {
+  const byId = new Map();
+  from.forEach((entry) => byId.set(entry.id, { ...entry }));
+
+  to.forEach((entry) => {
+    const base = byId.get(entry.id) || {
+      id: entry.id,
+      title: entry.title,
+      costLow: 0,
+      costHigh: 0,
+      scheduleLow: 0,
+      scheduleHigh: 0
+    };
+
+    byId.set(entry.id, {
+      id: entry.id,
+      title: entry.title || base.title,
+      costLow: lerpNumber(Number(base.costLow || 0), Number(entry.costLow || 0), progress),
+      costHigh: lerpNumber(Number(base.costHigh || 0), Number(entry.costHigh || 0), progress),
+      scheduleLow: lerpNumber(Number(base.scheduleLow || 0), Number(entry.scheduleLow || 0), progress),
+      scheduleHigh: lerpNumber(Number(base.scheduleHigh || 0), Number(entry.scheduleHigh || 0), progress)
+    });
+  });
+
+  return Array.from(byId.values());
+}
+
 function getMorphProgress(progress) {
   const t = Math.max(0, Math.min(1, Number(progress || 0)));
   return t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
@@ -466,7 +493,12 @@ function getDisplaySimulationResult() {
     costResults: blendArray(morph.fromResult.costResults, morph.toResult.costResults, t),
     scheduleResults: blendArray(morph.fromResult.scheduleResults, morph.toResult.scheduleResults, t),
     costStats: blendStats(morph.fromResult.costStats, morph.toResult.costStats, t),
-    scheduleStats: blendStats(morph.fromResult.scheduleStats, morph.toResult.scheduleStats, t)
+    scheduleStats: blendStats(morph.fromResult.scheduleStats, morph.toResult.scheduleStats, t),
+    riskContributions: blendRiskContributions(
+      morph.fromResult.riskContributions || [],
+      morph.toResult.riskContributions || [],
+      t
+    )
   };
 }
 
@@ -547,25 +579,20 @@ function makeListCard(title, rows) {
   return card;
 }
 
-function buildTopRiskTornadoEntries(risks, type = "cost", limit = 5) {
+function buildTopRiskTornadoEntries(simulationResult, type = "cost", limit = 5) {
   const isCost = type === "cost";
-  return risks
-    .filter((risk) => risk.status !== "Closed")
-    .map((risk) => {
-      const probability = Number(risk.probability || 0);
-      const lowImpact = Number(isCost ? risk.impact_cost_low : risk.impact_days_low) || 0;
-      const highImpact = Number(isCost ? risk.impact_cost_high : risk.impact_days_high) || 0;
-      return {
-        label: risk.title,
-        low: probability * lowImpact,
-        high: probability * highImpact
-      };
-    })
+  const entries = (simulationResult?.riskContributions || []).map((entry) => ({
+    label: entry.title,
+    low: Number(isCost ? entry.costLow : entry.scheduleLow) || 0,
+    high: Number(isCost ? entry.costHigh : entry.scheduleHigh) || 0
+  }));
+
+  return entries
     .sort((a, b) => b.high - a.high)
     .slice(0, limit);
 }
 
-function renderTornadoChart(title, entries, formatter = (v) => String(v)) {
+function renderTornadoChart(title, entries, formatter = (v) => String(v), typeLabel = "impact") {
   const card = document.createElement("div");
   card.className = "card tornado-chart";
 
@@ -579,10 +606,11 @@ function renderTornadoChart(title, entries, formatter = (v) => String(v)) {
     .map((entry) => {
       const lowPct = (Math.max(entry.low, 0) / maxValue) * 100;
       const highPct = (Math.max(entry.high, 0) / maxValue) * 100;
+      const tooltip = `${entry.label}: likely ${typeLabel} range ${formatter(entry.low)} to ${formatter(entry.high)}`;
       return `
         <div class="tornado-row">
           <div class="tornado-label" title="${entry.label}">${entry.label}</div>
-          <div class="tornado-track-wrap">
+          <div class="tornado-track-wrap" data-tooltip="${tooltip}">
             <div class="tornado-track">
               <div class="tornado-centerline"></div>
               <div class="tornado-bar tornado-bar-low" style="width:${lowPct.toFixed(1)}%"></div>
@@ -595,7 +623,26 @@ function renderTornadoChart(title, entries, formatter = (v) => String(v)) {
     })
     .join("");
 
-  card.innerHTML = `<h3>${title}</h3><div class="tornado-body">${rows}</div>`;
+  card.innerHTML = `<h3>${title}</h3><div class="tornado-body">${rows}</div><div class="chart-tooltip tooltip-hidden"></div>`;
+
+  const tooltip = card.querySelector(".chart-tooltip");
+  card.querySelectorAll("[data-tooltip]").forEach((element) => {
+    element.addEventListener("mouseenter", () => {
+      tooltip.textContent = element.dataset.tooltip;
+      tooltip.classList.remove("tooltip-hidden");
+    });
+
+    element.addEventListener("mousemove", (event) => {
+      const bounds = card.getBoundingClientRect();
+      tooltip.style.left = `${event.clientX - bounds.left + 10}px`;
+      tooltip.style.top = `${event.clientY - bounds.top - 10}px`;
+    });
+
+    element.addEventListener("mouseleave", () => {
+      tooltip.classList.add("tooltip-hidden");
+    });
+  });
+
   return card;
 }
 
@@ -784,7 +831,7 @@ function renderDistributionLineChart(title, values, options = {}) {
     referenceLines.push({
       percentile: options.projectPercentile,
       label: options.projectLabel || "Current Project P",
-      className: "chart-project-line"
+      className: options.projectLineClass || "chart-project-line"
     });
   }
 
@@ -1330,8 +1377,11 @@ function renderOutputs() {
   projectTiles.classList.add("output-project-full");
   simulationSummaryTiles.classList.add("output-project-full");
 
-  const topCostTornado = buildTopRiskTornadoEntries(state.data.risks, "cost", 5);
-  const topScheduleTornado = buildTopRiskTornadoEntries(state.data.risks, "schedule", 5);
+  const topCostTornado = buildTopRiskTornadoEntries(simulation, "cost", 5);
+  const topScheduleTornado = buildTopRiskTornadoEntries(simulation, "schedule", 5);
+
+  const commercialRag = getRagStatus(contingencyPValue?.percentile, targetPValue);
+  const scheduleRag = getRagStatus(contingencyDaysPValue?.percentile, targetPValue);
 
   const commercialColumn = document.createElement("div");
   commercialColumn.className = "outputs-column";
@@ -1340,6 +1390,7 @@ function renderOutputs() {
     renderDistributionLineChart("Cost Distribution", simulation.costResults, {
       projectPercentile: contingencyPValue?.percentile,
       projectLabel: "Current project P-value",
+      projectLineClass: `chart-project-line ${commercialRag.className}`,
       referenceLines: [
         {
           percentile: targetPValue,
@@ -1349,7 +1400,7 @@ function renderOutputs() {
       ],
       valueFormatter: (value) => fmtNumber(value, true)
     }),
-    renderTornadoChart("Top 5 Cost Risks (Tornado)", topCostTornado, (value) => fmtNumber(value, true))
+    renderTornadoChart("Top 5 Cost Risks (Tornado)", topCostTornado, (value) => fmtNumber(value, true), "cost exposure")
   );
 
   const scheduleColumn = document.createElement("div");
@@ -1359,6 +1410,7 @@ function renderOutputs() {
     renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults, {
       projectPercentile: contingencyDaysPValue?.percentile,
       projectLabel: "Current contingency days",
+      projectLineClass: `chart-project-line ${scheduleRag.className}`,
       referenceLines: [
         {
           percentile: targetPValue,
@@ -1368,7 +1420,7 @@ function renderOutputs() {
       ],
       valueFormatter: (value) => `${value.toFixed(1)}d`
     }),
-    renderTornadoChart("Top 5 Schedule Risks (Tornado)", topScheduleTornado, (value) => `${value.toFixed(1)}d`)
+    renderTornadoChart("Top 5 Schedule Risks (Tornado)", topScheduleTornado, (value) => `${value.toFixed(1)}d`, "schedule impact")
   );
 
   outputLayout.append(projectTiles, simulationSummaryTiles, commercialColumn, scheduleColumn);

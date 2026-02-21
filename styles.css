@@ -176,15 +176,18 @@ body.dark-theme .brand-logo-dark {
 .main-shell {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .top-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 1.25rem 1.5rem;
+  padding: 1.1rem 1.25rem;
   border-bottom: 1px solid var(--border);
   background: var(--header-bg);
+  width: min(1180px, 100%);
+  margin: 0 auto;
 }
 
 .top-header h1 {
@@ -200,7 +203,9 @@ body.dark-theme .brand-logo-dark {
 
 
 .page-content {
-  padding: 1.5rem;
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 1.25rem;
   display: grid;
   gap: 1rem;
   align-content: start;
@@ -416,9 +421,21 @@ body.dark-theme .brand-logo-dark {
 
 .chart-project-line {
   stroke: #f59e0b;
-  stroke-width: 1.4;
+  stroke-width: 1.6;
   stroke-dasharray: 5 4;
   cursor: pointer;
+}
+
+.chart-project-line.rag-green {
+  stroke: #16a34a;
+}
+
+.chart-project-line.rag-amber {
+  stroke: #f59e0b;
+}
+
+.chart-project-line.rag-red {
+  stroke: #dc2626;
 }
 
 .chart-target-line {
@@ -677,6 +694,7 @@ tr:hover {
 
 .tornado-track-wrap {
   padding: 0.2rem 0;
+  cursor: pointer;
 }
 
 .tornado-track {

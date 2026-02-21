@@ -107,21 +107,46 @@
     }));
   }
 
+  function summarizeRiskContributions(activeRisks, costSamplesByRisk, scheduleSamplesByRisk) {
+    return activeRisks.map((risk, index) => {
+      const costSamples = costSamplesByRisk[index].slice().sort((a, b) => a - b);
+      const scheduleSamples = scheduleSamplesByRisk[index].slice().sort((a, b) => a - b);
+      return {
+        id: risk.id,
+        title: risk.title,
+        costLow: percentile(costSamples, 0.1),
+        costHigh: percentile(costSamples, 0.9),
+        scheduleLow: percentile(scheduleSamples, 0.1),
+        scheduleHigh: percentile(scheduleSamples, 0.9)
+      };
+    });
+  }
+
   function runMonteCarlo(risks, iterations = 100) {
     const activeRisks = risks.filter((risk) => risk.status !== "Closed");
     const costResults = [];
     const scheduleResults = [];
+    const costSamplesByRisk = activeRisks.map(() => []);
+    const scheduleSamplesByRisk = activeRisks.map(() => []);
 
     for (let i = 0; i < iterations; i += 1) {
       let totalCost = 0;
       let totalDays = 0;
 
-      activeRisks.forEach((risk) => {
+      activeRisks.forEach((risk, riskIndex) => {
         const probability = Math.max(0, Math.min(1, toNumber(risk.probability, 0)));
+        let costImpact = 0;
+        let dayImpact = 0;
+
         if (Math.random() <= probability) {
-          totalCost += triangularSample(risk.impact_cost_low, risk.impact_cost_mid, risk.impact_cost_high);
-          totalDays += triangularSample(risk.impact_days_low, risk.impact_days_mid, risk.impact_days_high);
+          costImpact = triangularSample(risk.impact_cost_low, risk.impact_cost_mid, risk.impact_cost_high);
+          dayImpact = triangularSample(risk.impact_days_low, risk.impact_days_mid, risk.impact_days_high);
         }
+
+        totalCost += costImpact;
+        totalDays += dayImpact;
+        costSamplesByRisk[riskIndex].push(costImpact);
+        scheduleSamplesByRisk[riskIndex].push(dayImpact);
       });
 
       costResults.push(totalCost);
@@ -135,7 +160,8 @@
       costStats: summarize(costResults),
       scheduleStats: summarize(scheduleResults),
       costHistogram: buildHistogram(costResults, 12),
-      scheduleHistogram: buildHistogram(scheduleResults, 12)
+      scheduleHistogram: buildHistogram(scheduleResults, 12),
+      riskContributions: summarizeRiskContributions(activeRisks, costSamplesByRisk, scheduleSamplesByRisk)
     };
   }
 
