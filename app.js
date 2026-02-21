@@ -599,6 +599,7 @@ function renderDistributionLineChart(title, values, options = {}) {
 }
 
 function renderDashboard() {
+  const metrics = calcMetrics();
   const wrapper = document.createElement("div");
   wrapper.className = "page-section";
 
@@ -611,19 +612,16 @@ function renderDashboard() {
     makeCard("Contingency current P-value", formatPValue(contingencyPValue))
   ]);
 
-  const commercialGroup = makeTileGroup("Commercial", [
-    makeCard("Expected cost exposure", fmtNumber(metrics.expectedCost, true)),
-    makeCard("Top risk", metrics.topRisk ? metrics.topRisk.title : "N/A")
-  ]);
-
-  const scheduleGroup = makeTileGroup("Schedule", [
+  const riskOutputsGroup = makeTileGroup("Risk Outputs", [
     makeCard("Open risks", metrics.openCount),
-    makeCard("Expected schedule exposure (days)", metrics.expectedDays.toFixed(1))
+    makeCard("Expected cost exposure", fmtNumber(metrics.expectedCost, true)),
+    makeCard("Expected schedule exposure", metrics.expectedDays.toFixed(1)),
+    makeCard("Top risk", metrics.topRisk ? metrics.topRisk.title : "N/A")
   ]);
 
   const groupedTiles = document.createElement("div");
   groupedTiles.className = "grid-2";
-  groupedTiles.append(projectGroup, commercialGroup, scheduleGroup);
+  groupedTiles.append(projectGroup, riskOutputsGroup);
 
   const byCategory = categories.map((category) => ({
     label: category,
