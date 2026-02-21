@@ -24,6 +24,7 @@ const defaultData = {
     number_scale: "millions",
     currency_decimals: 2,
     date_format: "DD/MM/YYYY",
+    chart_label_mode: "hover",
     updated_at: new Date().toISOString()
   },
   risks: [
@@ -218,6 +219,7 @@ function loadData() {
     if (typeof parsed.project.target_p_value !== "number") {
       parsed.project.target_p_value = 80;
     }
+    parsed.project.target_p_value = Math.max(0, Math.min(100, Math.round(parsed.project.target_p_value / 10) * 10));
     if (!parsed.project.number_scale) {
       parsed.project.number_scale = "millions";
     }
@@ -226,6 +228,9 @@ function loadData() {
     }
     if (!parsed.project.date_format) {
       parsed.project.date_format = "DD/MM/YYYY";
+    }
+    if (!parsed.project.chart_label_mode) {
+      parsed.project.chart_label_mode = "hover";
     }
     return parsed;
   } catch {
@@ -813,6 +818,8 @@ function renderDistributionLineChart(title, values, options = {}) {
 
   const sortedValues = values.slice().sort((a, b) => a - b);
   const markerPercentiles = options.markerPercentiles || [10, 20, 30, 40, 50, 60, 70, 80, 90];
+  const targetMarkerPercentile = Number(options.targetPercentile);
+  const labelMode = options.labelMode === "callout" ? "callout" : "hover";
 
   const markerElements = markerPercentiles
     .map((percentile) => {
@@ -820,10 +827,15 @@ function renderDistributionLineChart(title, values, options = {}) {
       const yValue = interpolateDensity(points, xValue);
       const x = xToSvg(xValue);
       const y = yToSvg(yValue);
+      const isTarget = Number.isFinite(targetMarkerPercentile) && percentile === targetMarkerPercentile;
       const tooltip = `P${percentile}: ${formatter(xValue)}`;
+      const markerClass = isTarget ? "chart-marker chart-marker-target" : "chart-marker";
+      const hitRadius = isTarget ? 11 : 9;
+      const callout = labelMode === "callout" ? `<text x="${x.toFixed(1)}" y="${(y - 8).toFixed(1)}" text-anchor="middle" class="chart-callout">P${percentile}</text>` : "";
       return `<g>
-        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" class="chart-marker-hit" data-tooltip="${tooltip}" />
-        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="chart-marker" />
+        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${hitRadius}" class="chart-marker-hit" data-tooltip="${tooltip}" />
+        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isTarget ? 4.8 : 3.2}" class="${markerClass}" />
+        ${callout}
       </g>`;
     })
     .join("");
@@ -849,9 +861,11 @@ function renderDistributionLineChart(title, values, options = {}) {
       const x = xToSvg(xValue);
       const tooltip = `${line.label || "Reference"}: P${clamped.toFixed(0)} (${formatter(xValue)})`;
       const className = line.className || "chart-project-line";
+      const callout = labelMode === "callout" ? `<text x="${x.toFixed(1)}" y="${(padY + 10).toFixed(1)}" text-anchor="middle" class="chart-callout">${line.label || `P${clamped.toFixed(0)}`}</text>` : "";
       return `<g>
         <line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="${className}" />
         <line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="chart-reference-hit" data-tooltip="${tooltip}" />
+        ${callout}
       </g>`;
     })
     .join("");
@@ -879,22 +893,26 @@ function renderDistributionLineChart(title, values, options = {}) {
   `;
 
   const tooltip = card.querySelector(".chart-tooltip");
-  card.querySelectorAll("[data-tooltip]").forEach((element) => {
-    element.addEventListener("mouseenter", () => {
-      tooltip.textContent = element.dataset.tooltip;
-      tooltip.classList.remove("tooltip-hidden");
-    });
+  if (labelMode === "hover") {
+    card.querySelectorAll("[data-tooltip]").forEach((element) => {
+      element.addEventListener("mouseenter", () => {
+        tooltip.textContent = element.dataset.tooltip;
+        tooltip.classList.remove("tooltip-hidden");
+      });
 
-    element.addEventListener("mousemove", (event) => {
-      const bounds = card.getBoundingClientRect();
-      tooltip.style.left = `${event.clientX - bounds.left + 10}px`;
-      tooltip.style.top = `${event.clientY - bounds.top - 10}px`;
-    });
+      element.addEventListener("mousemove", (event) => {
+        const bounds = card.getBoundingClientRect();
+        tooltip.style.left = `${event.clientX - bounds.left + 10}px`;
+        tooltip.style.top = `${event.clientY - bounds.top - 10}px`;
+      });
 
-    element.addEventListener("mouseleave", () => {
-      tooltip.classList.add("tooltip-hidden");
+      element.addEventListener("mouseleave", () => {
+        tooltip.classList.add("tooltip-hidden");
+      });
     });
-  });
+  } else {
+    tooltip.remove();
+  }
 
   return card;
 }
@@ -969,7 +987,9 @@ function renderDashboard() {
       projectLabel: "Current project P-value",
       projectLineClass: `chart-project-line ${commercialRag.className}`,
       referenceLines: [{ percentile: targetPValue, label: `Target P${targetPValue.toFixed(0)}`, className: "chart-target-line" }],
-      valueFormatter: (value) => fmtNumber(value, true)
+      valueFormatter: (value) => fmtNumber(value, true),
+      targetPercentile: targetPValue,
+      labelMode: state.data.project.chart_label_mode
     }),
     renderTornadoChart("Top 5 Cost Risks (Tornado)", topCostTornado, (value) => fmtNumber(value, true), "cost exposure")
   );
@@ -983,7 +1003,9 @@ function renderDashboard() {
       projectLabel: "Current contingency days",
       projectLineClass: `chart-project-line ${scheduleRag.className}`,
       referenceLines: [{ percentile: targetPValue, label: `Target P${targetPValue.toFixed(0)}`, className: "chart-target-line" }],
-      valueFormatter: (value) => `${value.toFixed(1)}d`
+      valueFormatter: (value) => `${value.toFixed(1)}d`,
+      targetPercentile: targetPValue,
+      labelMode: state.data.project.chart_label_mode
     }),
     renderTornadoChart("Top 5 Schedule Risks (Tornado)", topScheduleTornado, (value) => `${value.toFixed(1)}d`, "schedule impact")
   );
@@ -1029,6 +1051,13 @@ function renderSettings() {
             <option value="DD/MM/YYYY" ${state.data.project.date_format === "DD/MM/YYYY" ? "selected" : ""}>DD/MM/YYYY</option>
             <option value="MM/DD/YYYY" ${state.data.project.date_format === "MM/DD/YYYY" ? "selected" : ""}>MM/DD/YYYY</option>
             <option value="YYYY-MM-DD" ${state.data.project.date_format === "YYYY-MM-DD" ? "selected" : ""}>YYYY-MM-DD</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label for="settings-chart-label-mode">Chart Data Labels</label>
+          <select id="settings-chart-label-mode" name="chart_label_mode">
+            <option value="hover" ${state.data.project.chart_label_mode === "hover" ? "selected" : ""}>Show on hover</option>
+            <option value="callout" ${state.data.project.chart_label_mode === "callout" ? "selected" : ""}>Show as callouts</option>
           </select>
         </div>
         <div class="setting-row">
@@ -1079,7 +1108,7 @@ function renderSettings() {
         </div>
         <div class="setting-row">
           <label for="settings-target-p">Target P Value</label>
-          <input id="settings-target-p" name="target_p_value" type="number" min="0" max="100" step="1" value="${state.data.project.target_p_value ?? 80}" required />
+          <input id="settings-target-p" name="target_p_value" type="number" min="0" max="100" step="10" value="${state.data.project.target_p_value ?? 80}" required />
         </div>
         <div class="actions"><button type="submit">Save Project</button></div>
       </form>
@@ -1104,6 +1133,7 @@ function renderSettings() {
       number_scale: form.get("number_scale"),
       currency_decimals: Number(form.get("currency_decimals")),
       date_format: form.get("date_format"),
+      chart_label_mode: form.get("chart_label_mode"),
       updated_at: new Date().toISOString()
     };
     state.simulation.result = null;
@@ -1124,7 +1154,7 @@ function renderSettings() {
       contingency: Number(form.get("contingency")),
       completion_date: form.get("completion_date"),
       contingency_days: Number(form.get("contingency_days")),
-      target_p_value: Number(form.get("target_p_value")),
+      target_p_value: Math.round(Number(form.get("target_p_value")) / 10) * 10,
       updated_at: new Date().toISOString()
     };
     state.simulation.result = null;
@@ -1391,7 +1421,9 @@ function renderOutputs() {
           className: "chart-target-line"
         }
       ],
-      valueFormatter: (value) => fmtNumber(value, true)
+      valueFormatter: (value) => fmtNumber(value, true),
+      targetPercentile: targetPValue,
+      labelMode: state.data.project.chart_label_mode
     }),
     renderTornadoChart("Top 5 Cost Risks (Tornado)", topCostTornado, (value) => fmtNumber(value, true), "cost exposure")
   );
@@ -1411,7 +1443,9 @@ function renderOutputs() {
           className: "chart-target-line"
         }
       ],
-      valueFormatter: (value) => `${value.toFixed(1)}d`
+      valueFormatter: (value) => `${value.toFixed(1)}d`,
+      targetPercentile: targetPValue,
+      labelMode: state.data.project.chart_label_mode
     }),
     renderTornadoChart("Top 5 Schedule Risks (Tornado)", topScheduleTornado, (value) => `${value.toFixed(1)}d`, "schedule impact")
   );

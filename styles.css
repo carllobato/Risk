@@ -12,6 +12,7 @@
   --track-bg: #dfE8f1;
   --input-bg: #eef3f9;
   --input-text: #1e2f4a;
+  --target-accent: #1e2f4a;
 }
 
 body.dark-theme {
@@ -28,6 +29,7 @@ body.dark-theme {
   --track-bg: #24344d;
   --input-bg: #162238;
   --input-text: #f5f7fa;
+  --target-accent: #ffffff;
 }
 
 * {
@@ -405,6 +407,17 @@ body.dark-theme .brand-logo-dark {
   pointer-events: none;
 }
 
+.chart-marker-target {
+  fill: var(--target-accent);
+  stroke: var(--card);
+  stroke-width: 1.5;
+}
+
+.chart-callout {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
 .chart-marker-hit {
   fill: transparent;
   cursor: pointer;
@@ -443,7 +456,7 @@ body.dark-theme .brand-logo-dark {
 }
 
 .chart-target-line {
-  stroke: #ffffff;
+  stroke: var(--target-accent);
   stroke-width: 2;
   stroke-dasharray: none;
   stroke-linecap: square;
