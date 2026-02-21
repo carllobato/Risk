@@ -21,6 +21,9 @@ const defaultData = {
     completion_date: "2027-12-31",
     contingency_days: 20,
     target_p_value: 80,
+    number_scale: "millions",
+    currency_decimals: 2,
+    date_format: "DD/MM/YYYY",
     updated_at: new Date().toISOString()
   },
   risks: [
@@ -215,6 +218,15 @@ function loadData() {
     if (typeof parsed.project.target_p_value !== "number") {
       parsed.project.target_p_value = 80;
     }
+    if (!parsed.project.number_scale) {
+      parsed.project.number_scale = "millions";
+    }
+    if (typeof parsed.project.currency_decimals !== "number") {
+      parsed.project.currency_decimals = 2;
+    }
+    if (!parsed.project.date_format) {
+      parsed.project.date_format = "DD/MM/YYYY";
+    }
     return parsed;
   } catch {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
@@ -231,11 +243,31 @@ function saveData() {
 
 function fmtNumber(value, currency = false) {
   if (currency) {
+    const amount = Number(value || 0);
+    const decimals = Math.max(0, Math.min(4, Number(state.data.project.currency_decimals ?? 2)));
+    const scale = state.data.project.number_scale || "millions";
+
+    if (scale === "millions") {
+      const scaled = amount / 1_000_000;
+      const symbol =
+        new Intl.NumberFormat(undefined, {
+          style: "currency",
+          currency: state.data.project.currency || "USD",
+          currencyDisplay: "narrowSymbol",
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0
+        })
+          .formatToParts(0)
+          .find((part) => part.type === "currency")?.value || "$";
+      return `${symbol}${scaled.toFixed(decimals)}m`;
+    }
+
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: state.data.project.currency || "USD",
-      maximumFractionDigits: 0
-    }).format(value || 0);
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    }).format(amount);
   }
 
   return new Intl.NumberFormat().format(Number(value || 0));
@@ -294,7 +326,19 @@ function formatDateOnly(dateInput) {
   if (Number.isNaN(date.getTime())) {
     return "N/A";
   }
-  return date.toLocaleDateString();
+
+  const format = state.data.project.date_format || "DD/MM/YYYY";
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(date.getFullYear());
+
+  if (format === "MM/DD/YYYY") {
+    return `${mm}/${dd}/${yyyy}`;
+  }
+  if (format === "YYYY-MM-DD") {
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function calcForecastCompletionDate(scheduleImpactValue) {
@@ -722,7 +766,7 @@ function renderDashboard() {
     { label: "Location", value: state.data.project.location || "N/A" },
     { label: "Project Value", value: fmtNumber(state.data.project.baseline_cost, true) },
     { label: "Contingency Fund", value: fmtNumber(state.data.project.contingency, true) },
-    { label: "Completion Date", value: state.data.project.completion_date || "N/A" },
+    { label: "Completion Date", value: formatDateOnly(state.data.project.completion_date) },
     { label: "Current Allowance Date", value: calcCurrentAllowanceDate() },
     { label: "Forecast Completion Date", value: calcForecastCompletionDate(metrics.expectedDays) }
   ]);
@@ -824,6 +868,25 @@ function renderSettings() {
           </select>
         </div>
         <div class="setting-row">
+          <label for="settings-number-scale">Rounding / Scale</label>
+          <select id="settings-number-scale" name="number_scale">
+            <option value="millions" ${state.data.project.number_scale === "millions" ? "selected" : ""}>Millions (e.g. $12.00m)</option>
+            <option value="full" ${state.data.project.number_scale === "full" ? "selected" : ""}>Full Value</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label for="settings-currency-decimals">Currency Decimals</label>
+          <input id="settings-currency-decimals" name="currency_decimals" type="number" min="0" max="4" step="1" value="${state.data.project.currency_decimals ?? 2}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-date-format">Date Format</label>
+          <select id="settings-date-format" name="date_format">
+            <option value="DD/MM/YYYY" ${state.data.project.date_format === "DD/MM/YYYY" ? "selected" : ""}>DD/MM/YYYY</option>
+            <option value="MM/DD/YYYY" ${state.data.project.date_format === "MM/DD/YYYY" ? "selected" : ""}>MM/DD/YYYY</option>
+            <option value="YYYY-MM-DD" ${state.data.project.date_format === "YYYY-MM-DD" ? "selected" : ""}>YYYY-MM-DD</option>
+          </select>
+        </div>
+        <div class="setting-row">
           <label for="settings-theme-toggle">Theme</label>
           <label class="inline-toggle">
             <input id="settings-theme-toggle" type="checkbox" ${isDark ? "checked" : ""} />
@@ -893,6 +956,9 @@ function renderSettings() {
       ...state.data.project,
       currency: form.get("currency"),
       units: form.get("units"),
+      number_scale: form.get("number_scale"),
+      currency_decimals: Number(form.get("currency_decimals")),
+      date_format: form.get("date_format"),
       updated_at: new Date().toISOString()
     };
     state.simulation.result = null;
@@ -1112,15 +1178,24 @@ function renderOutputs() {
   const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
   const contingencyDaysPValue = calcScheduleContingencyPValueFromResults(simulation?.scheduleResults);
   const targetPValue = Math.max(0, Math.min(100, Number(state.data.project.target_p_value || 0)));
-  const targetCompletionDate = calcTargetCompletionDateFromResults(simulation?.scheduleResults);
 
   const projectTiles = makeTileGroup("Project Details", [
-    makeCard("Baseline cost", fmtNumber(state.data.project.baseline_cost, true)),
-    makeCard("Contingency", fmtNumber(state.data.project.contingency, true)),
-    makeCard("Contingency current P-value", formatPValue(contingencyPValue)),
-    makeCard("Current allowance date", calcCurrentAllowanceDate()),
-    makeCard("Forecasted completion date", calcForecastCompletionDate(simulation.scheduleStats.p50)),
-    makeCard(`Target P${targetPValue.toFixed(0)} completion`, targetCompletionDate)
+    makeCard("Project Cost", fmtNumber(state.data.project.baseline_cost, true)),
+    makeCard("Commercial Contingency", fmtNumber(state.data.project.contingency, true)),
+    makeCard("Completion Date", formatDateOnly(state.data.project.completion_date)),
+    makeCard("Schedule Contingency", `${Number(state.data.project.contingency_days || 0).toFixed(1)} days`),
+    makeCard("Target P Value", `P${targetPValue.toFixed(0)}`)
+  ]);
+
+  const commercialDelta = (contingencyPValue?.percentile ?? 0) - targetPValue;
+  const scheduleDelta = (contingencyDaysPValue?.percentile ?? 0) - targetPValue;
+  const formatDelta = (delta) => `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pts`;
+
+  const simulationSummaryTiles = makeTileGroup("Simulation Results", [
+    makeCard("Current Commercial P-value", formatPValue(contingencyPValue)),
+    makeCard("Commercial Delta to Target", formatDelta(commercialDelta)),
+    makeCard("Current Schedule P-value", formatPValue(contingencyDaysPValue)),
+    makeCard("Schedule Delta to Target", formatDelta(scheduleDelta))
   ]);
 
   const commercialTiles = makeTileGroup("Commercial", [
@@ -1142,6 +1217,7 @@ function renderOutputs() {
   outputLayout.className = "grid-2 outputs-layout";
 
   projectTiles.classList.add("output-project-full");
+  simulationSummaryTiles.classList.add("output-project-full");
 
   const commercialColumn = document.createElement("div");
   commercialColumn.className = "outputs-column";
@@ -1179,7 +1255,7 @@ function renderOutputs() {
     })
   );
 
-  outputLayout.append(projectTiles, commercialColumn, scheduleColumn);
+  outputLayout.append(projectTiles, simulationSummaryTiles, commercialColumn, scheduleColumn);
   pageContent.append(outputLayout);
 }
 
