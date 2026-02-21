@@ -19,6 +19,7 @@ const defaultData = {
     contingency: 950000,
     units: "Days",
     completion_date: "2027-12-31",
+    contingency_days: 20,
     target_p_value: 80,
     updated_at: new Date().toISOString()
   },
@@ -208,6 +209,9 @@ function loadData() {
     if (!parsed.project.completion_date) {
       parsed.project.completion_date = "2027-12-31";
     }
+    if (typeof parsed.project.contingency_days !== "number") {
+      parsed.project.contingency_days = 20;
+    }
     if (typeof parsed.project.target_p_value !== "number") {
       parsed.project.target_p_value = 80;
     }
@@ -280,6 +284,42 @@ function calcContingencyPValueFromResults(results) {
   return {
     percentile: (atOrBelow / results.length) * 100,
     contingency,
+    runs: results.length
+  };
+}
+
+
+function formatDateOnly(dateInput) {
+  const date = new Date(dateInput);
+  if (Number.isNaN(date.getTime())) {
+    return "N/A";
+  }
+  return date.toLocaleDateString();
+}
+
+function calcForecastCompletionDate(scheduleImpactValue) {
+  const baseDate = new Date(state.data.project.completion_date);
+  if (Number.isNaN(baseDate.getTime())) {
+    return "N/A";
+  }
+
+  const units = state.data.project.units === "Weeks" ? 7 : 1;
+  const daysToAdd = Number(scheduleImpactValue || 0) * units;
+  baseDate.setDate(baseDate.getDate() + Math.round(daysToAdd));
+  return formatDateOnly(baseDate);
+}
+
+function calcScheduleContingencyPValueFromResults(results) {
+  const contingencyDays = Number(state.data.project.contingency_days || 0);
+
+  if (!results || !results.length) {
+    return null;
+  }
+
+  const atOrBelow = results.filter((value) => value <= contingencyDays).length;
+  return {
+    percentile: (atOrBelow / results.length) * 100,
+    contingencyDays,
     runs: results.length
   };
 }
@@ -638,7 +678,8 @@ function renderDashboard() {
     { label: "Location", value: state.data.project.location || "N/A" },
     { label: "Project Value", value: fmtNumber(state.data.project.baseline_cost, true) },
     { label: "Contingency Fund", value: fmtNumber(state.data.project.contingency, true) },
-    { label: "Completion Date", value: state.data.project.completion_date || "N/A" }
+    { label: "Completion Date", value: state.data.project.completion_date || "N/A" },
+    { label: "Forecast Completion Date", value: calcForecastCompletionDate(metrics.expectedDays) }
   ]);
 
   const riskAllocationGroup = makeListCard("Risk Allocation", [
@@ -743,6 +784,10 @@ function renderSettings() {
           <input id="settings-completion-date" name="completion_date" type="date" value="${state.data.project.completion_date || ""}" required />
         </div>
         <div class="setting-row">
+          <label for="settings-contingency-days">Current Contingency Days</label>
+          <input id="settings-contingency-days" name="contingency_days" type="number" min="0" step="0.1" value="${state.data.project.contingency_days ?? 20}" required />
+        </div>
+        <div class="setting-row">
           <label for="settings-target-p">Target P Value</label>
           <input id="settings-target-p" name="target_p_value" type="number" min="0" max="100" step="1" value="${state.data.project.target_p_value ?? 80}" required />
         </div>
@@ -785,6 +830,7 @@ function renderSettings() {
       baseline_cost: Number(form.get("baseline_cost")),
       contingency: Number(form.get("contingency")),
       completion_date: form.get("completion_date"),
+      contingency_days: Number(form.get("contingency_days")),
       target_p_value: Number(form.get("target_p_value")),
       updated_at: new Date().toISOString()
     };
@@ -982,11 +1028,13 @@ function renderOutputs() {
   const simulation = getDisplaySimulationResult();
 
   const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
+  const contingencyDaysPValue = calcScheduleContingencyPValueFromResults(simulation?.scheduleResults);
 
   const projectTiles = makeTileGroup("Project Details", [
     makeCard("Baseline cost", fmtNumber(state.data.project.baseline_cost, true)),
     makeCard("Contingency", fmtNumber(state.data.project.contingency, true)),
-    makeCard("Contingency current P-value", formatPValue(contingencyPValue))
+    makeCard("Contingency current P-value", formatPValue(contingencyPValue)),
+    makeCard("Forecasted completion date", calcForecastCompletionDate(simulation.scheduleStats.p50))
   ]);
 
   const commercialTiles = makeTileGroup("Commercial", [
@@ -1000,7 +1048,8 @@ function renderOutputs() {
     makeCard("Mean Schedule (days)", simulation.scheduleStats.mean.toFixed(1)),
     makeCard("P50 Schedule (days)", simulation.scheduleStats.p50.toFixed(1)),
     makeCard("P80 Schedule (days)", simulation.scheduleStats.p80.toFixed(1)),
-    makeCard("P90 Schedule (days)", simulation.scheduleStats.p90.toFixed(1))
+    makeCard("P90 Schedule (days)", simulation.scheduleStats.p90.toFixed(1)),
+    makeCard("Contingency days", Number(state.data.project.contingency_days || 0).toFixed(1))
   ]);
 
   const groupedOutputTiles = document.createElement("div");
@@ -1016,6 +1065,8 @@ function renderOutputs() {
       valueFormatter: (value) => fmtNumber(value, true)
     }),
     renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults, {
+      projectPercentile: contingencyDaysPValue?.percentile,
+      projectLabel: "Current contingency days",
       valueFormatter: (value) => `${value.toFixed(1)}d`
     })
   );
