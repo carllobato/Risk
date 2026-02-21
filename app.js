@@ -303,9 +303,12 @@ function calcForecastCompletionDate(scheduleImpactValue) {
     return "N/A";
   }
 
-  const units = state.data.project.units === "Weeks" ? 7 : 1;
-  const daysToAdd = Number(scheduleImpactValue || 0) * units;
-  baseDate.setDate(baseDate.getDate() + Math.round(daysToAdd));
+  const scheduleUnitsInDays = state.data.project.units === "Weeks" ? 7 : 1;
+  const contingencyDays = Number(state.data.project.contingency_days || 0);
+  const riskImpactDays = Number(scheduleImpactValue || 0) * scheduleUnitsInDays;
+  const offsetDays = riskImpactDays - contingencyDays;
+
+  baseDate.setDate(baseDate.getDate() + Math.round(offsetDays));
   return formatDateOnly(baseDate);
 }
 
@@ -717,7 +720,43 @@ function renderDashboard() {
   groupedTiles.className = "grid-2";
   groupedTiles.append(projectGroup, riskAllocationGroup, topRisksGroup, statusGroup, categoryGroup);
 
-  wrapper.append(groupedTiles);
+  const activeRisks = getActiveRisks();
+  const topCostVisual = activeRisks
+    .slice()
+    .sort((a, b) => b.probability * b.impact_cost_mid - a.probability * a.impact_cost_mid)
+    .slice(0, 5)
+    .map((risk) => ({ label: risk.title, value: risk.probability * risk.impact_cost_mid }));
+
+  const topTimeVisual = activeRisks
+    .slice()
+    .sort((a, b) => b.probability * b.impact_days_mid - a.probability * a.impact_days_mid)
+    .slice(0, 5)
+    .map((risk) => ({ label: risk.title, value: risk.probability * risk.impact_days_mid }));
+
+  const statusBars = statuses.map((status) => ({
+    label: status,
+    value: state.data.risks.filter((risk) => risk.status === status).length
+  }));
+
+  const categoryBars = categories.map((category) => ({
+    label: category,
+    value: state.data.risks.filter((risk) => risk.category === category).length
+  }));
+
+  const visualGrid = document.createElement("div");
+  visualGrid.className = "grid-2";
+  visualGrid.append(
+    renderBarChart("Top Cost Risks", topCostVisual, (v) => fmtNumber(v, true)),
+    renderBarChart(
+      "Top Time Risks",
+      topTimeVisual,
+      (v) => `${v.toFixed(1)} ${state.data.project.units.toLowerCase()}`
+    ),
+    renderBarChart("Risk Status", statusBars, (v) => String(v)),
+    renderBarChart("Risks by Category", categoryBars, (v) => String(v))
+  );
+
+  wrapper.append(groupedTiles, visualGrid);
   pageContent.appendChild(wrapper);
 }
 
