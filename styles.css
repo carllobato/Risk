@@ -207,8 +207,10 @@ body {
 }
 
 .distribution-svg {
+  display: block;
   width: 100%;
-  height: 220px;
+  height: auto;
+  aspect-ratio: 640 / 220;
 }
 
 .chart-axis {
