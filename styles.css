@@ -201,6 +201,7 @@ body {
 
 
 .distribution-chart {
+  position: relative;
   display: grid;
   gap: 0.65rem;
 }
@@ -236,6 +237,39 @@ body {
 .chart-tick {
   fill: var(--muted);
   font-size: 10px;
+}
+
+.chart-marker {
+  fill: var(--primary);
+  stroke: var(--card);
+  stroke-width: 1.2;
+  cursor: pointer;
+}
+
+.chart-project-line {
+  stroke: #f59e0b;
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+  cursor: pointer;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.chart-tooltip.tooltip-hidden {
+  opacity: 0;
 }
 
 label {

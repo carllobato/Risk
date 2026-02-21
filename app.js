@@ -353,7 +353,45 @@ function buildDensitySeries(values, points = 60) {
   return densities;
 }
 
-function renderDistributionLineChart(title, values) {
+function getPercentileValue(sortedValues, percentile) {
+  if (!sortedValues.length) {
+    return 0;
+  }
+
+  const rank = (percentile / 100) * (sortedValues.length - 1);
+  const lowIndex = Math.floor(rank);
+  const highIndex = Math.ceil(rank);
+
+  if (lowIndex === highIndex) {
+    return sortedValues[lowIndex];
+  }
+
+  const weight = rank - lowIndex;
+  return sortedValues[lowIndex] * (1 - weight) + sortedValues[highIndex] * weight;
+}
+
+function interpolateDensity(points, xValue) {
+  if (xValue <= points[0].x) {
+    return points[0].y;
+  }
+
+  if (xValue >= points[points.length - 1].x) {
+    return points[points.length - 1].y;
+  }
+
+  for (let i = 1; i < points.length; i += 1) {
+    const left = points[i - 1];
+    const right = points[i];
+    if (xValue <= right.x) {
+      const t = (xValue - left.x) / (right.x - left.x);
+      return left.y + t * (right.y - left.y);
+    }
+  }
+
+  return points[points.length - 1].y;
+}
+
+function renderDistributionLineChart(title, values, options = {}) {
   const card = document.createElement("div");
   card.className = "card distribution-chart";
   const points = buildDensitySeries(values);
@@ -372,18 +410,23 @@ function renderDistributionLineChart(title, values) {
 
   const xMin = points[0].x;
   const xMax = points[points.length - 1].x;
-
   const yMin = 0;
   const yMax = Math.max(...points.map((point) => point.y), 1e-9);
 
-  const scaled = points.map((point) => {
-    const xRatio = xMax === xMin ? 0.5 : (point.x - xMin) / (xMax - xMin);
-    const yRatio = yMax === yMin ? 0.5 : (point.y - yMin) / (yMax - yMin);
-    return {
-      x: padX + xRatio * usableW,
-      y: padY + (1 - yRatio) * usableH
-    };
-  });
+  const xToSvg = (value) => {
+    const xRatio = xMax === xMin ? 0.5 : (value - xMin) / (xMax - xMin);
+    return padX + xRatio * usableW;
+  };
+
+  const yToSvg = (value) => {
+    const yRatio = yMax === yMin ? 0.5 : (value - yMin) / (yMax - yMin);
+    return padY + (1 - yRatio) * usableH;
+  };
+
+  const scaled = points.map((point) => ({
+    x: xToSvg(point.x),
+    y: yToSvg(point.y)
+  }));
 
   const linePath = scaled
     .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
@@ -391,6 +434,30 @@ function renderDistributionLineChart(title, values) {
   const areaPath = `${linePath} L${(width - padX).toFixed(1)},${(height - padY).toFixed(1)} L${padX.toFixed(1)},${(height - padY).toFixed(1)} Z`;
 
   const chartId = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const formatter = options.valueFormatter || ((value) => fmtNumber(value));
+
+  const sortedValues = values.slice().sort((a, b) => a - b);
+  const markerPercentiles = options.markerPercentiles || [10, 20, 30, 40, 50, 60, 70, 80, 90];
+
+  const markerElements = markerPercentiles
+    .map((percentile) => {
+      const xValue = getPercentileValue(sortedValues, percentile);
+      const yValue = interpolateDensity(points, xValue);
+      const x = xToSvg(xValue);
+      const y = yToSvg(yValue);
+      const tooltip = `P${percentile}: ${formatter(xValue)}`;
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="chart-marker" data-tooltip="${tooltip}" />`;
+    })
+    .join("");
+
+  let projectLineElement = "";
+  if (typeof options.projectPercentile === "number") {
+    const clamped = Math.max(0, Math.min(100, options.projectPercentile));
+    const xValue = getPercentileValue(sortedValues, clamped);
+    const x = xToSvg(xValue);
+    const tooltip = `${options.projectLabel || "Current Project P"}: P${clamped.toFixed(0)} (${formatter(xValue)})`;
+    projectLineElement = `<line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="chart-project-line" data-tooltip="${tooltip}" />`;
+  }
 
   card.innerHTML = `
     <h3>${title}</h3>
@@ -406,12 +473,33 @@ function renderDistributionLineChart(title, values) {
       <line x1="${padX}" y1="${padY + usableH / 2}" x2="${width - padX}" y2="${padY + usableH / 2}" class="chart-grid" />
       <path d="${areaPath}" class="chart-area" style="fill:url(#grad-${chartId})" />
       <path d="${linePath}" class="chart-line" />
-      <text x="${padX}" y="${height - 2}" class="chart-tick">${fmtNumber(xMin)}</text>
-      <text x="${width - padX}" y="${height - 2}" text-anchor="end" class="chart-tick">${fmtNumber(xMax)}</text>
+      ${projectLineElement}
+      ${markerElements}
+      <text x="${padX}" y="${height - 2}" class="chart-tick">${formatter(xMin)}</text>
+      <text x="${width - padX}" y="${height - 2}" text-anchor="end" class="chart-tick">${formatter(xMax)}</text>
       <text x="${padX - 6}" y="${height - padY + 4}" text-anchor="end" class="chart-tick">${yMin.toExponential(1)}</text>
       <text x="${padX - 6}" y="${padY + 4}" text-anchor="end" class="chart-tick">${yMax.toExponential(1)}</text>
     </svg>
+    <div class="chart-tooltip tooltip-hidden"></div>
   `;
+
+  const tooltip = card.querySelector(".chart-tooltip");
+  card.querySelectorAll("[data-tooltip]").forEach((element) => {
+    element.addEventListener("mouseenter", () => {
+      tooltip.textContent = element.dataset.tooltip;
+      tooltip.classList.remove("tooltip-hidden");
+    });
+
+    element.addEventListener("mousemove", (event) => {
+      const bounds = card.getBoundingClientRect();
+      tooltip.style.left = `${event.clientX - bounds.left + 10}px`;
+      tooltip.style.top = `${event.clientY - bounds.top - 10}px`;
+    });
+
+    element.addEventListener("mouseleave", () => {
+      tooltip.classList.add("tooltip-hidden");
+    });
+  });
 
   return card;
 }
@@ -755,8 +843,14 @@ function renderOutputs() {
   const chartGrid = document.createElement("div");
   chartGrid.className = "grid-2";
   chartGrid.append(
-    renderDistributionLineChart("Cost Distribution", simulation.costResults),
-    renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults)
+    renderDistributionLineChart("Cost Distribution", simulation.costResults, {
+      projectPercentile: contingencyPValue?.percentile,
+      projectLabel: "Current project P-value",
+      valueFormatter: (value) => fmtNumber(value, true)
+    }),
+    renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults, {
+      valueFormatter: (value) => `${value.toFixed(1)}d`
+    })
   );
 
   pageContent.append(comparison, groupedOutputTiles);
