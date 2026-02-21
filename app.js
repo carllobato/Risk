@@ -444,6 +444,14 @@ function blendStats(from = {}, to = {}, progress = 1) {
   return output;
 }
 
+function getSteppedMorphProgress(progress, iterations, stepSize = 10) {
+  const safeProgress = Math.max(0, Math.min(1, Number(progress || 0)));
+  const safeIterations = Math.max(1, Number(iterations || 100));
+  const safeStep = Math.max(1, Number(stepSize || 1));
+  const totalSteps = Math.max(1, Math.ceil(safeIterations / safeStep));
+  return Math.round(safeProgress * totalSteps) / totalSteps;
+}
+
 function getDisplaySimulationResult() {
   const base = state.simulation.result;
   if (!base) {
@@ -455,7 +463,7 @@ function getDisplaySimulationResult() {
     return base;
   }
 
-  const t = morph.progress;
+  const t = getSteppedMorphProgress(morph.progress, morph.toResult.iterations, 10);
   return {
     iterations: morph.toResult.iterations,
     costResults: blendArray(morph.fromResult.costResults, morph.toResult.costResults, t),
