@@ -1,7 +1,8 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
 const THEME_KEY = "risk-mvp-theme";
 const APP_VERSION = "v1.2.1 (2026-02-20 21:55 UTC)";
-const NAV_ITEMS = ["Dashboard", "Project Data / Inputs", "Risk Register", "Outputs"];
+const NAV_ITEMS = ["Dashboard", "Risk Register", "Outputs"];
+const SETTINGS_PAGE = "Settings";
 
 const categories = ["Cost", "Schedule", "Commercial", "Scope", "Delivery"];
 const statuses = ["Open", "Mitigating", "Closed"];
@@ -14,6 +15,7 @@ const defaultData = {
     currency: "USD",
     baseline_cost: 12000000,
     contingency: 950000,
+    units: "Days",
     updated_at: new Date().toISOString()
   },
   risks: [
@@ -161,16 +163,13 @@ const closeModalBtn = document.getElementById("close-modal");
 const riskForm = document.getElementById("risk-form");
 const riskModalTitle = document.getElementById("risk-modal-title");
 const versionBadge = document.getElementById("app-version");
-const themeToggle = document.getElementById("theme-toggle");
-const themeToggleLabel = document.getElementById("theme-toggle-label");
+const settingsLink = document.getElementById("settings-link");
 
 
 function applyTheme(theme) {
   const isDark = theme === "dark";
   document.body.classList.toggle("dark-theme", isDark);
   document.body.dataset.theme = isDark ? "dark" : "light";
-  themeToggle.checked = isDark;
-  themeToggleLabel.textContent = isDark ? "Dark mode: On" : "Dark mode: Off";
 }
 
 function initTheme() {
@@ -178,8 +177,8 @@ function initTheme() {
   applyTheme(storedTheme);
 }
 
-function handleThemeToggle() {
-  const nextTheme = themeToggle.checked ? "dark" : "light";
+function handleThemeToggle(event) {
+  const nextTheme = event.target.checked ? "dark" : "light";
   localStorage.setItem(THEME_KEY, nextTheme);
   applyTheme(nextTheme);
 }
@@ -192,7 +191,11 @@ function loadData() {
   }
 
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed.project.units) {
+      parsed.project.units = "Days";
+    }
+    return parsed;
   } catch {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
     return structuredClone(defaultData);
@@ -638,26 +641,44 @@ function renderDashboard() {
   pageContent.appendChild(wrapper);
 }
 
-function renderProjectData() {
+function renderSettings() {
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "card settings-section";
+  const isDark = document.body.classList.contains("dark-theme");
 
   card.innerHTML = `
-    <h3>Project Data / Inputs</h3>
-    <form id="project-form" class="form-grid">
-      <label>Name <input name="name" value="${state.data.project.name}" required /></label>
+    <h3>Settings</h3>
+    <form id="settings-form" class="form-grid">
+      <label>Project Name <input name="name" value="${state.data.project.name}" required /></label>
       <label>Client <input name="client" value="${state.data.project.client}" required /></label>
       <label>Currency <input name="currency" value="${state.data.project.currency}" required /></label>
       <label>Baseline Cost <input name="baseline_cost" type="number" min="0" step="1" value="${state.data.project.baseline_cost}" required /></label>
       <label>Contingency <input name="contingency" type="number" min="0" step="1" value="${state.data.project.contingency}" required /></label>
+      <label>Units
+        <select name="units">
+          <option value="Days" ${state.data.project.units === "Days" ? "selected" : ""}>Days</option>
+          <option value="Weeks" ${state.data.project.units === "Weeks" ? "selected" : ""}>Weeks</option>
+        </select>
+      </label>
+      <label class="inline-toggle">Theme Mode
+        <input id="settings-theme-toggle" type="checkbox" ${isDark ? "checked" : ""} />
+        <span>${isDark ? "Dark" : "Light"}</span>
+      </label>
       <div class="actions">
-        <button type="submit">Save Project</button>
+        <button type="submit">Save Settings</button>
       </div>
     </form>
     <p class="tile-label">Last updated: ${fmtDate(state.data.project.updated_at)}</p>
   `;
 
-  card.querySelector("#project-form").onsubmit = (event) => {
+  const themeToggle = card.querySelector("#settings-theme-toggle");
+  const themeLabel = card.querySelector(".inline-toggle span");
+  themeToggle.addEventListener("change", (event) => {
+    handleThemeToggle(event);
+    themeLabel.textContent = event.target.checked ? "Dark" : "Light";
+  });
+
+  card.querySelector("#settings-form").onsubmit = (event) => {
     event.preventDefault();
     const form = new FormData(event.target);
     state.data.project = {
@@ -667,6 +688,7 @@ function renderProjectData() {
       currency: form.get("currency"),
       baseline_cost: Number(form.get("baseline_cost")),
       contingency: Number(form.get("contingency")),
+      units: form.get("units"),
       updated_at: new Date().toISOString()
     };
     state.simulation.result = null;
@@ -960,8 +982,8 @@ function render() {
 
   if (state.page === "Dashboard") {
     renderDashboard();
-  } else if (state.page === "Project Data / Inputs") {
-    renderProjectData();
+  } else if (state.page === SETTINGS_PAGE) {
+    renderSettings();
   } else if (state.page === "Risk Register") {
     renderRiskRegister();
   } else if (state.page === "Outputs") {
@@ -970,7 +992,10 @@ function render() {
 }
 
 closeModalBtn.onclick = closeRiskModal;
-themeToggle.addEventListener("change", handleThemeToggle);
+settingsLink.onclick = () => {
+  state.page = SETTINGS_PAGE;
+  render();
+};
 
 modalBackdrop.onclick = (event) => {
   if (event.target === modalBackdrop) {

@@ -48,6 +48,8 @@ body {
   border-right: 1px solid var(--border);
   padding: 1.25rem;
   background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
 }
 
 .brand {
@@ -57,6 +59,8 @@ body {
 .nav-menu {
   display: grid;
   gap: 0.5rem;
+  align-content: start;
+  flex: 1;
 }
 
 .nav-item {
@@ -75,6 +79,32 @@ body {
   background: var(--primary-soft);
   color: var(--primary);
   font-weight: 600;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+
+.settings-link {
+  width: 100%;
+}
+
+.settings-section {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+}
+
+.inline-toggle input {
+  width: 1rem;
+  height: 1rem;
 }
 
 .main-shell {
@@ -102,24 +132,6 @@ body {
   font-size: 0.85rem;
 }
 
-.header-controls {
-  display: grid;
-  justify-items: end;
-  gap: 0.35rem;
-}
-
-.theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.theme-toggle input {
-  width: 1rem;
-  height: 1rem;
-}
 
 .page-content {
   padding: 1.5rem;
