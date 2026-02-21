@@ -327,6 +327,29 @@ function calcScheduleContingencyPValueFromResults(results) {
   };
 }
 
+
+function calcCurrentAllowanceDate() {
+  const baseDate = new Date(state.data.project.completion_date);
+  if (Number.isNaN(baseDate.getTime())) {
+    return "N/A";
+  }
+
+  const contingencyDays = Number(state.data.project.contingency_days || 0);
+  baseDate.setDate(baseDate.getDate() - Math.round(contingencyDays));
+  return formatDateOnly(baseDate);
+}
+
+function calcTargetCompletionDateFromResults(scheduleResults) {
+  if (!scheduleResults || !scheduleResults.length) {
+    return "N/A";
+  }
+
+  const sorted = scheduleResults.slice().sort((a, b) => a - b);
+  const targetPercentile = Math.max(0, Math.min(100, Number(state.data.project.target_p_value || 0)));
+  const scheduleAtTarget = getPercentileValue(sorted, targetPercentile);
+  return calcForecastCompletionDate(scheduleAtTarget);
+}
+
 function lerpNumber(from, to, progress) {
   return from + (to - from) * progress;
 }
@@ -611,14 +634,30 @@ function renderDistributionLineChart(title, values, options = {}) {
     })
     .join("");
 
-  let projectLineElement = "";
+  const referenceLines = [];
   if (typeof options.projectPercentile === "number") {
-    const clamped = Math.max(0, Math.min(100, options.projectPercentile));
-    const xValue = getPercentileValue(sortedValues, clamped);
-    const x = xToSvg(xValue);
-    const tooltip = `${options.projectLabel || "Current Project P"}: P${clamped.toFixed(0)} (${formatter(xValue)})`;
-    projectLineElement = `<line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="chart-project-line" data-tooltip="${tooltip}" />`;
+    referenceLines.push({
+      percentile: options.projectPercentile,
+      label: options.projectLabel || "Current Project P",
+      className: "chart-project-line"
+    });
   }
+
+  if (Array.isArray(options.referenceLines)) {
+    referenceLines.push(...options.referenceLines);
+  }
+
+  const referenceLineElements = referenceLines
+    .filter((line) => typeof line.percentile === "number")
+    .map((line) => {
+      const clamped = Math.max(0, Math.min(100, line.percentile));
+      const xValue = getPercentileValue(sortedValues, clamped);
+      const x = xToSvg(xValue);
+      const tooltip = `${line.label || "Reference"}: P${clamped.toFixed(0)} (${formatter(xValue)})`;
+      const className = line.className || "chart-project-line";
+      return `<line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="${className}" data-tooltip="${tooltip}" />`;
+    })
+    .join("");
 
   card.innerHTML = `
     <h3>${title}</h3>
@@ -633,7 +672,7 @@ function renderDistributionLineChart(title, values, options = {}) {
       <line x1="${padX}" y1="${padY + usableH / 2}" x2="${width - padX}" y2="${padY + usableH / 2}" class="chart-grid" />
       <path d="${areaPath}" class="chart-area" style="fill:url(#grad-${chartId})" />
       <path d="${linePath}" class="chart-line" />
-      ${projectLineElement}
+      ${referenceLineElements}
       ${markerElements}
       <text x="${padX}" y="${height - 2}" class="chart-tick">${formatter(xMin)}</text>
       <text x="${width - padX}" y="${height - 2}" text-anchor="end" class="chart-tick">${formatter(xMax)}</text>
@@ -664,10 +703,12 @@ function renderDistributionLineChart(title, values, options = {}) {
 
 function renderDashboard() {
   const metrics = calcMetrics();
+  ensureSimulationResult();
   const wrapper = document.createElement("div");
   wrapper.className = "page-section";
 
   const contingencyPValue = calcContingencyPValue();
+  const targetScheduleDate = calcTargetCompletionDateFromResults(state.simulation.result?.scheduleResults);
 
   const topFiveRisks = getActiveRisks()
     .slice()
@@ -682,6 +723,7 @@ function renderDashboard() {
     { label: "Project Value", value: fmtNumber(state.data.project.baseline_cost, true) },
     { label: "Contingency Fund", value: fmtNumber(state.data.project.contingency, true) },
     { label: "Completion Date", value: state.data.project.completion_date || "N/A" },
+    { label: "Current Allowance Date", value: calcCurrentAllowanceDate() },
     { label: "Forecast Completion Date", value: calcForecastCompletionDate(metrics.expectedDays) }
   ]);
 
@@ -689,7 +731,8 @@ function renderDashboard() {
     { label: "Current P Value", value: formatPValue(contingencyPValue) },
     { label: "Open Risks", value: String(metrics.openCount) },
     { label: "Expected Cost Exposure", value: fmtNumber(metrics.expectedCost, true) },
-    { label: "Expected Schedule Exposure", value: `${metrics.expectedDays.toFixed(1)} ${state.data.project.units.toLowerCase()}` }
+    { label: "Expected Schedule Exposure", value: `${metrics.expectedDays.toFixed(1)} ${state.data.project.units.toLowerCase()}` },
+    { label: `Target P${Number(state.data.project.target_p_value || 0).toFixed(0)} Completion`, value: targetScheduleDate }
   ]);
 
   const topRiskRows =
@@ -1068,12 +1111,16 @@ function renderOutputs() {
 
   const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
   const contingencyDaysPValue = calcScheduleContingencyPValueFromResults(simulation?.scheduleResults);
+  const targetPValue = Math.max(0, Math.min(100, Number(state.data.project.target_p_value || 0)));
+  const targetCompletionDate = calcTargetCompletionDateFromResults(simulation?.scheduleResults);
 
   const projectTiles = makeTileGroup("Project Details", [
     makeCard("Baseline cost", fmtNumber(state.data.project.baseline_cost, true)),
     makeCard("Contingency", fmtNumber(state.data.project.contingency, true)),
     makeCard("Contingency current P-value", formatPValue(contingencyPValue)),
-    makeCard("Forecasted completion date", calcForecastCompletionDate(simulation.scheduleStats.p50))
+    makeCard("Current allowance date", calcCurrentAllowanceDate()),
+    makeCard("Forecasted completion date", calcForecastCompletionDate(simulation.scheduleStats.p50)),
+    makeCard(`Target P${targetPValue.toFixed(0)} completion`, targetCompletionDate)
   ]);
 
   const commercialTiles = makeTileGroup("Commercial", [
@@ -1101,11 +1148,25 @@ function renderOutputs() {
     renderDistributionLineChart("Cost Distribution", simulation.costResults, {
       projectPercentile: contingencyPValue?.percentile,
       projectLabel: "Current project P-value",
+      referenceLines: [
+        {
+          percentile: targetPValue,
+          label: `Target P${targetPValue.toFixed(0)}`,
+          className: "chart-target-line"
+        }
+      ],
       valueFormatter: (value) => fmtNumber(value, true)
     }),
     renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults, {
       projectPercentile: contingencyDaysPValue?.percentile,
       projectLabel: "Current contingency days",
+      referenceLines: [
+        {
+          percentile: targetPValue,
+          label: `Target P${targetPValue.toFixed(0)}`,
+          className: "chart-target-line"
+        }
+      ],
       valueFormatter: (value) => `${value.toFixed(1)}d`
     })
   );
