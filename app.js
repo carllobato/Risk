@@ -239,21 +239,7 @@ function calcMetrics() {
 }
 
 function calcContingencyPValue() {
-  const contingency = Number(state.data.project.contingency || 0);
-  const results = state.simulation.result?.costResults;
-
-  if (!results || !results.length) {
-    return null;
-  }
-
-  const atOrBelow = results.filter((value) => value <= contingency).length;
-  const percentile = (atOrBelow / results.length) * 100;
-
-  return {
-    percentile,
-    contingency,
-    runs: results.length
-  };
+  return calcContingencyPValueFromResults(state.simulation.result?.costResults);
 }
 
 function formatPValue(pValue) {
@@ -262,6 +248,73 @@ function formatPValue(pValue) {
   }
 
   return `P${pValue.percentile.toFixed(0)}`;
+}
+
+function calcContingencyPValueFromResults(results) {
+  const contingency = Number(state.data.project.contingency || 0);
+
+  if (!results || !results.length) {
+    return null;
+  }
+
+  const atOrBelow = results.filter((value) => value <= contingency).length;
+  return {
+    percentile: (atOrBelow / results.length) * 100,
+    contingency,
+    runs: results.length
+  };
+}
+
+function lerpNumber(from, to, progress) {
+  return from + (to - from) * progress;
+}
+
+function blendArray(from = [], to = [], progress = 1) {
+  const total = Math.max(from.length, to.length);
+  if (!total) {
+    return [];
+  }
+
+  const fromLast = from[from.length - 1] ?? 0;
+  const toLast = to[to.length - 1] ?? fromLast;
+
+  return Array.from({ length: total }, (_, index) => {
+    const a = from[index] ?? fromLast;
+    const b = to[index] ?? toLast;
+    return lerpNumber(a, b, progress);
+  });
+}
+
+function blendStats(from = {}, to = {}, progress = 1) {
+  const keys = ["mean", "median", "p50", "p80", "p90", "min", "max"];
+  const output = {};
+  keys.forEach((key) => {
+    const a = Number(from[key] ?? 0);
+    const b = Number(to[key] ?? a);
+    output[key] = lerpNumber(a, b, progress);
+  });
+  return output;
+}
+
+function getDisplaySimulationResult() {
+  const base = state.simulation.result;
+  if (!base) {
+    return null;
+  }
+
+  const morph = state.simulation.morph;
+  if (!morph.active || !morph.fromResult || !morph.toResult) {
+    return base;
+  }
+
+  const t = morph.progress;
+  return {
+    iterations: morph.toResult.iterations,
+    costResults: blendArray(morph.fromResult.costResults, morph.toResult.costResults, t),
+    scheduleResults: blendArray(morph.fromResult.scheduleResults, morph.toResult.scheduleResults, t),
+    costStats: blendStats(morph.fromResult.costStats, morph.toResult.costStats, t),
+    scheduleStats: blendStats(morph.fromResult.scheduleStats, morph.toResult.scheduleStats, t)
+  };
 }
 
 function ensureSimulationResult() {
@@ -813,9 +866,9 @@ function renderOutputs() {
     return;
   }
 
-  const simulation = state.simulation.result;
+  const simulation = getDisplaySimulationResult();
 
-  const contingencyPValue = calcContingencyPValue();
+  const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
 
   const comparison = document.createElement("div");
   comparison.className = "card";
@@ -879,14 +932,10 @@ function renderOutputs() {
     renderDistributionLineChart("Cost Distribution", simulation.costResults, {
       projectPercentile: contingencyPValue?.percentile,
       projectLabel: "Current project P-value",
-      valueFormatter: (value) => fmtNumber(value, true),
-      morphTargetValues: state.simulation.morph.active ? state.simulation.morph.toResult?.costResults : null,
-      morphProgress: state.simulation.morph.active ? state.simulation.morph.progress : 0
+      valueFormatter: (value) => fmtNumber(value, true)
     }),
     renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults, {
-      valueFormatter: (value) => `${value.toFixed(1)}d`,
-      morphTargetValues: state.simulation.morph.active ? state.simulation.morph.toResult?.scheduleResults : null,
-      morphProgress: state.simulation.morph.active ? state.simulation.morph.progress : 0
+      valueFormatter: (value) => `${value.toFixed(1)}d`
     })
   );
 
