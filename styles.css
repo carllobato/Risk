@@ -49,6 +49,10 @@ body {
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   border-right: 1px solid var(--border);
   padding: 1.25rem;
   background: linear-gradient(180deg, var(--sidebar-bg) 0%, var(--bg) 100%);
@@ -246,6 +250,33 @@ body.dark-theme .brand-logo-dark {
 }
 
 
+.pvalue-with-rag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+.rag-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.rag-green {
+  background: #16a34a;
+}
+
+.rag-amber {
+  background: #f59e0b;
+}
+
+.rag-red {
+  background: #dc2626;
+}
+
+
 .summary-list-card {
   display: grid;
   gap: 0.75rem;
@@ -362,6 +393,24 @@ body.dark-theme .brand-logo-dark {
   fill: var(--primary);
   stroke: var(--card);
   stroke-width: 1.2;
+  pointer-events: none;
+}
+
+.chart-marker-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.chart-line-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  cursor: pointer;
+}
+
+.chart-reference-hit {
+  stroke: transparent;
+  stroke-width: 14;
   cursor: pointer;
 }
 
@@ -546,6 +595,9 @@ tr:hover {
   }
 
   .sidebar {
+    position: static;
+    height: auto;
+    overflow: visible;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }

@@ -444,18 +444,9 @@ function blendStats(from = {}, to = {}, progress = 1) {
   return output;
 }
 
-function getSteppedMorphProgress(progress, iterations, stepSize = 10, smoothing = 0.7) {
-  const safeProgress = Math.max(0, Math.min(1, Number(progress || 0)));
-  const safeIterations = Math.max(1, Number(iterations || 100));
-  const safeStep = Math.max(1, Number(stepSize || 1));
-  const totalSteps = Math.max(1, Math.ceil(safeIterations / safeStep));
-
-  const stepped = Math.floor(safeProgress * totalSteps) / totalSteps;
-  const withinStep = safeProgress * totalSteps - Math.floor(safeProgress * totalSteps);
-  const easedWithinStep = 1 - (1 - withinStep) * (1 - withinStep);
-  const smoothFactor = Math.max(0, Math.min(1, Number(smoothing || 0)));
-
-  return Math.min(1, stepped + (easedWithinStep / totalSteps) * smoothFactor);
+function getMorphProgress(progress) {
+  const t = Math.max(0, Math.min(1, Number(progress || 0)));
+  return t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
 }
 
 function getDisplaySimulationResult() {
@@ -469,7 +460,7 @@ function getDisplaySimulationResult() {
     return base;
   }
 
-  const t = getSteppedMorphProgress(morph.progress, morph.toResult.iterations, 10, 0.7);
+  const t = getMorphProgress(morph.progress);
   return {
     iterations: morph.toResult.iterations,
     costResults: blendArray(morph.fromResult.costResults, morph.toResult.costResults, t),
@@ -477,6 +468,28 @@ function getDisplaySimulationResult() {
     costStats: blendStats(morph.fromResult.costStats, morph.toResult.costStats, t),
     scheduleStats: blendStats(morph.fromResult.scheduleStats, morph.toResult.scheduleStats, t)
   };
+}
+
+function getRagStatus(currentPercentile, targetPercentile) {
+  const current = Number(currentPercentile || 0);
+  const target = Number(targetPercentile || 0);
+
+  if (current >= target) {
+    return { className: "rag-green", label: "On target" };
+  }
+
+  if (current >= target - 10) {
+    return { className: "rag-amber", label: "Near target" };
+  }
+
+  return { className: "rag-red", label: "Below target" };
+}
+
+function formatPValueWithRag(pValue, targetPercentile) {
+  const rag = getRagStatus(pValue?.percentile, targetPercentile);
+  return `<span class="pvalue-with-rag"><span class="rag-dot ${rag.className}" title="${rag.label}" aria-label="${rag.label}"></span>${formatPValue(
+    pValue
+  )}</span>`;
 }
 
 function ensureSimulationResult() {
@@ -759,7 +772,10 @@ function renderDistributionLineChart(title, values, options = {}) {
       const x = xToSvg(xValue);
       const y = yToSvg(yValue);
       const tooltip = `P${percentile}: ${formatter(xValue)}`;
-      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="chart-marker" data-tooltip="${tooltip}" />`;
+      return `<g>
+        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" class="chart-marker-hit" data-tooltip="${tooltip}" />
+        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="chart-marker" />
+      </g>`;
     })
     .join("");
 
@@ -784,7 +800,10 @@ function renderDistributionLineChart(title, values, options = {}) {
       const x = xToSvg(xValue);
       const tooltip = `${line.label || "Reference"}: P${clamped.toFixed(0)} (${formatter(xValue)})`;
       const className = line.className || "chart-project-line";
-      return `<line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="${className}" data-tooltip="${tooltip}" />`;
+      return `<g>
+        <line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="${className}" />
+        <line x1="${x.toFixed(1)}" y1="${padY}" x2="${x.toFixed(1)}" y2="${height - padY}" class="chart-reference-hit" data-tooltip="${tooltip}" />
+      </g>`;
     })
     .join("");
 
@@ -801,6 +820,7 @@ function renderDistributionLineChart(title, values, options = {}) {
       <line x1="${padX}" y1="${padY + usableH / 2}" x2="${width - padX}" y2="${padY + usableH / 2}" class="chart-grid" />
       <path d="${areaPath}" class="chart-area" style="fill:url(#grad-${chartId})" />
       <path d="${linePath}" class="chart-line" />
+      <path d="${linePath}" class="chart-line-hit" data-tooltip="${title} curve" />
       ${referenceLineElements}
       ${markerElements}
       <text x="${padX}" y="${height - 2}" class="chart-tick">${formatter(xMin)}</text>
@@ -1280,12 +1300,12 @@ function renderOutputs() {
   const scheduleDeltaValue = targetScheduleValue - Number(state.data.project.contingency_days || 0);
 
   const simulationSummaryTiles = makeTileGroup("Simulation Results", [
-    makeCard("Current Commercial P-value", formatPValue(contingencyPValue)),
+    makeCard("Current Commercial P-value", formatPValueWithRag(contingencyPValue, targetPValue)),
     makeCard(
       "Commercial Delta to Target",
       formatDeltaPair(commercialDeltaValue, Number(state.data.project.contingency || 0))
     ),
-    makeCard("Current Schedule P-value", formatPValue(contingencyDaysPValue)),
+    makeCard("Current Schedule P-value", formatPValueWithRag(contingencyDaysPValue, targetPValue)),
     makeCard(
       "Schedule Delta to Target",
       formatDeltaPair(scheduleDeltaValue, Number(state.data.project.contingency_days || 0), "days")
