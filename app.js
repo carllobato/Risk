@@ -444,12 +444,18 @@ function blendStats(from = {}, to = {}, progress = 1) {
   return output;
 }
 
-function getSteppedMorphProgress(progress, iterations, stepSize = 10) {
+function getSteppedMorphProgress(progress, iterations, stepSize = 10, smoothing = 0.7) {
   const safeProgress = Math.max(0, Math.min(1, Number(progress || 0)));
   const safeIterations = Math.max(1, Number(iterations || 100));
   const safeStep = Math.max(1, Number(stepSize || 1));
   const totalSteps = Math.max(1, Math.ceil(safeIterations / safeStep));
-  return Math.round(safeProgress * totalSteps) / totalSteps;
+
+  const stepped = Math.floor(safeProgress * totalSteps) / totalSteps;
+  const withinStep = safeProgress * totalSteps - Math.floor(safeProgress * totalSteps);
+  const easedWithinStep = 1 - (1 - withinStep) * (1 - withinStep);
+  const smoothFactor = Math.max(0, Math.min(1, Number(smoothing || 0)));
+
+  return Math.min(1, stepped + (easedWithinStep / totalSteps) * smoothFactor);
 }
 
 function getDisplaySimulationResult() {
@@ -463,7 +469,7 @@ function getDisplaySimulationResult() {
     return base;
   }
 
-  const t = getSteppedMorphProgress(morph.progress, morph.toResult.iterations, 10);
+  const t = getSteppedMorphProgress(morph.progress, morph.toResult.iterations, 10, 0.7);
   return {
     iterations: morph.toResult.iterations,
     costResults: blendArray(morph.fromResult.costResults, morph.toResult.costResults, t),
@@ -1235,18 +1241,15 @@ function renderOutputs() {
   ]);
 
   const commercialTiles = makeTileGroup("Commercial", [
-    makeCard("Mean Cost", fmtNumber(simulation.costStats.mean, true)),
     makeCard("P50 Cost", fmtNumber(simulation.costStats.p50, true)),
     makeCard("P80 Cost", fmtNumber(simulation.costStats.p80, true)),
     makeCard("P90 Cost", fmtNumber(simulation.costStats.p90, true))
   ]);
 
   const scheduleTiles = makeTileGroup("Schedule", [
-    makeCard("Mean Schedule (days)", simulation.scheduleStats.mean.toFixed(1)),
     makeCard("P50 Schedule (days)", simulation.scheduleStats.p50.toFixed(1)),
     makeCard("P80 Schedule (days)", simulation.scheduleStats.p80.toFixed(1)),
-    makeCard("P90 Schedule (days)", simulation.scheduleStats.p90.toFixed(1)),
-    makeCard("Contingency days", Number(state.data.project.contingency_days || 0).toFixed(1))
+    makeCard("P90 Schedule (days)", simulation.scheduleStats.p90.toFixed(1))
   ]);
 
   const outputLayout = document.createElement("div");
