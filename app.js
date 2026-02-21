@@ -141,7 +141,14 @@ const state = {
   simulation: {
     isRunning: false,
     result: null,
-    iterations: 100
+    iterations: 100,
+    morph: {
+      active: false,
+      progress: 1,
+      durationMs: 1000,
+      fromResult: null,
+      toResult: null
+    }
   }
 };
 
@@ -391,10 +398,36 @@ function interpolateDensity(points, xValue) {
   return points[points.length - 1].y;
 }
 
+
+function buildInterpolatedSeries(values, targetValues, progress) {
+  const source = buildDensitySeries(values);
+
+  if (!targetValues || progress >= 1) {
+    return source;
+  }
+
+  const target = buildDensitySeries(targetValues);
+  const total = Math.max(source.length, target.length);
+  if (!total) {
+    return source;
+  }
+
+  const getPoint = (arr, idx) => arr[Math.min(arr.length - 1, idx)];
+
+  return Array.from({ length: total }, (_, index) => {
+    const a = getPoint(source, index);
+    const b = getPoint(target, index);
+    return {
+      x: a.x + (b.x - a.x) * progress,
+      y: a.y + (b.y - a.y) * progress
+    };
+  });
+}
+
 function renderDistributionLineChart(title, values, options = {}) {
   const card = document.createElement("div");
   card.className = "card distribution-chart";
-  const points = buildDensitySeries(values);
+  const points = buildInterpolatedSeries(values, options.morphTargetValues, options.morphProgress || 0);
 
   if (!points.length) {
     card.innerHTML = `<h3>${title}</h3><p class="tile-label">No simulation data available.</p>`;
@@ -759,12 +792,12 @@ function renderOutputs() {
   `;
 
   const runBtn = controls.querySelector("#run-simulation");
-  runBtn.disabled = state.simulation.isRunning;
-  runBtn.textContent = state.simulation.isRunning ? "Running..." : "Run Simulation";
+  runBtn.disabled = state.simulation.isRunning || state.simulation.morph.active;
+  runBtn.textContent = state.simulation.isRunning ? "Running..." : state.simulation.morph.active ? "Updating..." : "Run Simulation";
   runBtn.onclick = runSimulation;
   pageContent.appendChild(controls);
 
-  if (state.simulation.isRunning) {
+  if (!state.simulation.result && state.simulation.isRunning) {
     const loadingCard = document.createElement("div");
     loadingCard.className = "card";
     loadingCard.innerHTML = `<p class="tile-label">Running ${state.simulation.iterations} iterations...</p>`;
@@ -846,10 +879,14 @@ function renderOutputs() {
     renderDistributionLineChart("Cost Distribution", simulation.costResults, {
       projectPercentile: contingencyPValue?.percentile,
       projectLabel: "Current project P-value",
-      valueFormatter: (value) => fmtNumber(value, true)
+      valueFormatter: (value) => fmtNumber(value, true),
+      morphTargetValues: state.simulation.morph.active ? state.simulation.morph.toResult?.costResults : null,
+      morphProgress: state.simulation.morph.active ? state.simulation.morph.progress : 0
     }),
     renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults, {
-      valueFormatter: (value) => `${value.toFixed(1)}d`
+      valueFormatter: (value) => `${value.toFixed(1)}d`,
+      morphTargetValues: state.simulation.morph.active ? state.simulation.morph.toResult?.scheduleResults : null,
+      morphProgress: state.simulation.morph.active ? state.simulation.morph.progress : 0
     })
   );
 
@@ -859,17 +896,48 @@ function renderOutputs() {
 }
 
 function runSimulation() {
+  if (state.simulation.isRunning || state.simulation.morph.active) {
+    return;
+  }
+
   state.simulation.isRunning = true;
   render();
 
   setTimeout(() => {
-    state.simulation.result = window.SimulationEngine.runMonteCarlo(
+    const nextResult = window.SimulationEngine.runMonteCarlo(
       state.data.risks,
       state.simulation.iterations
     );
+
+    const fromResult = state.simulation.result || nextResult;
     state.simulation.isRunning = false;
-    render();
-  }, 30);
+    state.simulation.morph = {
+      ...state.simulation.morph,
+      active: true,
+      progress: 0,
+      fromResult,
+      toResult: nextResult
+    };
+
+    const start = performance.now();
+    const animate = (now) => {
+      const progress = Math.min(1, (now - start) / state.simulation.morph.durationMs);
+      state.simulation.morph.progress = progress;
+      state.simulation.result = state.simulation.morph.fromResult;
+      render();
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        state.simulation.result = state.simulation.morph.toResult;
+        state.simulation.morph.active = false;
+        state.simulation.morph.progress = 1;
+        render();
+      }
+    };
+
+    requestAnimationFrame(animate);
+  }, 20);
 }
 
 function render() {
