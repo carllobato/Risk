@@ -534,6 +534,58 @@ function makeListCard(title, rows) {
   return card;
 }
 
+function buildTopRiskTornadoEntries(risks, type = "cost", limit = 5) {
+  const isCost = type === "cost";
+  return risks
+    .filter((risk) => risk.status !== "Closed")
+    .map((risk) => {
+      const probability = Number(risk.probability || 0);
+      const lowImpact = Number(isCost ? risk.impact_cost_low : risk.impact_days_low) || 0;
+      const highImpact = Number(isCost ? risk.impact_cost_high : risk.impact_days_high) || 0;
+      return {
+        label: risk.title,
+        low: probability * lowImpact,
+        high: probability * highImpact
+      };
+    })
+    .sort((a, b) => b.high - a.high)
+    .slice(0, limit);
+}
+
+function renderTornadoChart(title, entries, formatter = (v) => String(v)) {
+  const card = document.createElement("div");
+  card.className = "card tornado-chart";
+
+  if (!entries.length) {
+    card.innerHTML = `<h3>${title}</h3><p class="tile-label">No open risks available.</p>`;
+    return card;
+  }
+
+  const maxValue = Math.max(...entries.map((entry) => Math.max(entry.low, entry.high)), 1);
+  const rows = entries
+    .map((entry) => {
+      const lowPct = (Math.max(entry.low, 0) / maxValue) * 100;
+      const highPct = (Math.max(entry.high, 0) / maxValue) * 100;
+      return `
+        <div class="tornado-row">
+          <div class="tornado-label" title="${entry.label}">${entry.label}</div>
+          <div class="tornado-track-wrap">
+            <div class="tornado-track">
+              <div class="tornado-centerline"></div>
+              <div class="tornado-bar tornado-bar-low" style="width:${lowPct.toFixed(1)}%"></div>
+              <div class="tornado-bar tornado-bar-high" style="width:${highPct.toFixed(1)}%"></div>
+            </div>
+          </div>
+          <div class="tornado-values">${formatter(entry.low)} – ${formatter(entry.high)}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  card.innerHTML = `<h3>${title}</h3><div class="tornado-body">${rows}</div>`;
+  return card;
+}
+
 function renderBarChart(title, entries, formatter = (v) => v) {
   const template = document.getElementById("chart-template");
   const node = template.content.firstElementChild.cloneNode(true);
@@ -1258,6 +1310,9 @@ function renderOutputs() {
   projectTiles.classList.add("output-project-full");
   simulationSummaryTiles.classList.add("output-project-full");
 
+  const topCostTornado = buildTopRiskTornadoEntries(state.data.risks, "cost", 5);
+  const topScheduleTornado = buildTopRiskTornadoEntries(state.data.risks, "schedule", 5);
+
   const commercialColumn = document.createElement("div");
   commercialColumn.className = "outputs-column";
   commercialColumn.append(
@@ -1273,7 +1328,8 @@ function renderOutputs() {
         }
       ],
       valueFormatter: (value) => fmtNumber(value, true)
-    })
+    }),
+    renderTornadoChart("Top 5 Cost Risks (Tornado)", topCostTornado, (value) => fmtNumber(value, true))
   );
 
   const scheduleColumn = document.createElement("div");
@@ -1291,7 +1347,8 @@ function renderOutputs() {
         }
       ],
       valueFormatter: (value) => `${value.toFixed(1)}d`
-    })
+    }),
+    renderTornadoChart("Top 5 Schedule Risks (Tornado)", topScheduleTornado, (value) => `${value.toFixed(1)}d`)
   );
 
   outputLayout.append(projectTiles, simulationSummaryTiles, commercialColumn, scheduleColumn);
