@@ -321,6 +321,101 @@ function renderBarChart(title, entries, formatter = (v) => v) {
   return node;
 }
 
+function buildDensitySeries(values, points = 60) {
+  if (!values || !values.length) {
+    return [];
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  if (min === max) {
+    return [{ x: min, y: 1 }];
+  }
+
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  const stdDev = Math.sqrt(variance) || 1;
+  const bandwidth = Math.max((1.06 * stdDev) / Math.pow(values.length, 0.2), (max - min) / 100);
+
+  const domainMin = min - bandwidth * 2;
+  const domainMax = max + bandwidth * 2;
+  const step = (domainMax - domainMin) / (points - 1);
+
+  const gaussian = (u) => (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * u * u);
+
+  const densities = Array.from({ length: points }, (_, index) => {
+    const x = domainMin + step * index;
+    const y = values.reduce((sum, value) => sum + gaussian((x - value) / bandwidth), 0) / (values.length * bandwidth);
+    return { x, y };
+  });
+
+  return densities;
+}
+
+function renderDistributionLineChart(title, values) {
+  const card = document.createElement("div");
+  card.className = "card distribution-chart";
+  const points = buildDensitySeries(values);
+
+  if (!points.length) {
+    card.innerHTML = `<h3>${title}</h3><p class="tile-label">No simulation data available.</p>`;
+    return card;
+  }
+
+  const width = 640;
+  const height = 220;
+  const padX = 36;
+  const padY = 18;
+  const usableW = width - padX * 2;
+  const usableH = height - padY * 2;
+
+  const xMin = points[0].x;
+  const xMax = points[points.length - 1].x;
+
+  const yMin = 0;
+  const yMax = Math.max(...points.map((point) => point.y), 1e-9);
+
+  const scaled = points.map((point) => {
+    const xRatio = xMax === xMin ? 0.5 : (point.x - xMin) / (xMax - xMin);
+    const yRatio = yMax === yMin ? 0.5 : (point.y - yMin) / (yMax - yMin);
+    return {
+      x: padX + xRatio * usableW,
+      y: padY + (1 - yRatio) * usableH
+    };
+  });
+
+  const linePath = scaled
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+    .join(" ");
+  const areaPath = `${linePath} L${(width - padX).toFixed(1)},${(height - padY).toFixed(1)} L${padX.toFixed(1)},${(height - padY).toFixed(1)} Z`;
+
+  const chartId = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+  card.innerHTML = `
+    <h3>${title}</h3>
+    <svg class="distribution-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${title}">
+      <defs>
+        <linearGradient id="grad-${chartId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.35" />
+          <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.04" />
+        </linearGradient>
+      </defs>
+      <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="chart-axis" />
+      <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" class="chart-axis" />
+      <line x1="${padX}" y1="${padY + usableH / 2}" x2="${width - padX}" y2="${padY + usableH / 2}" class="chart-grid" />
+      <path d="${areaPath}" class="chart-area" style="fill:url(#grad-${chartId})" />
+      <path d="${linePath}" class="chart-line" />
+      <text x="${padX}" y="${height - 2}" class="chart-tick">${fmtNumber(xMin)}</text>
+      <text x="${width - padX}" y="${height - 2}" text-anchor="end" class="chart-tick">${fmtNumber(xMax)}</text>
+      <text x="${padX - 6}" y="${height - padY + 4}" text-anchor="end" class="chart-tick">${yMin.toExponential(1)}</text>
+      <text x="${padX - 6}" y="${padY + 4}" text-anchor="end" class="chart-tick">${yMax.toExponential(1)}</text>
+    </svg>
+  `;
+
+  return card;
+}
+
 function renderDashboard() {
   const metrics = calcMetrics();
   const wrapper = document.createElement("div");
@@ -660,8 +755,8 @@ function renderOutputs() {
   const chartGrid = document.createElement("div");
   chartGrid.className = "grid-2";
   chartGrid.append(
-    renderBarChart("Cost Distribution (Histogram)", simulation.costHistogram, (v) => `${v}`),
-    renderBarChart("Schedule Distribution (Histogram)", simulation.scheduleHistogram, (v) => `${v}`)
+    renderDistributionLineChart("Cost Distribution", simulation.costResults),
+    renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults)
   );
 
   pageContent.append(comparison, groupedOutputTiles);
