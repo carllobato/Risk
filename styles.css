@@ -90,6 +90,10 @@ body {
   width: 100%;
 }
 
+.settings-link span {
+  margin-right: 0.35rem;
+}
+
 .settings-section {
   display: grid;
   gap: 0.9rem;

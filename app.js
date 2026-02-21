@@ -16,6 +16,8 @@ const defaultData = {
     baseline_cost: 12000000,
     contingency: 950000,
     units: "Days",
+    completion_date: "2027-12-31",
+    target_p_value: 80,
     updated_at: new Date().toISOString()
   },
   risks: [
@@ -194,6 +196,12 @@ function loadData() {
     const parsed = JSON.parse(raw);
     if (!parsed.project.units) {
       parsed.project.units = "Days";
+    }
+    if (!parsed.project.completion_date) {
+      parsed.project.completion_date = "2027-12-31";
+    }
+    if (typeof parsed.project.target_p_value !== "number") {
+      parsed.project.target_p_value = 80;
     }
     return parsed;
   } catch {
@@ -642,52 +650,65 @@ function renderDashboard() {
 }
 
 function renderSettings() {
-  const card = document.createElement("div");
-  card.className = "card settings-section";
+  const wrapper = document.createElement("div");
+  wrapper.className = "grid-2";
   const isDark = document.body.classList.contains("dark-theme");
 
-  card.innerHTML = `
-    <h3>Settings</h3>
-    <form id="settings-form" class="form-grid">
-      <label>Project Name <input name="name" value="${state.data.project.name}" required /></label>
-      <label>Client <input name="client" value="${state.data.project.client}" required /></label>
-      <label>Currency <input name="currency" value="${state.data.project.currency}" required /></label>
-      <label>Baseline Cost <input name="baseline_cost" type="number" min="0" step="1" value="${state.data.project.baseline_cost}" required /></label>
-      <label>Contingency <input name="contingency" type="number" min="0" step="1" value="${state.data.project.contingency}" required /></label>
-      <label>Units
-        <select name="units">
-          <option value="Days" ${state.data.project.units === "Days" ? "selected" : ""}>Days</option>
-          <option value="Weeks" ${state.data.project.units === "Weeks" ? "selected" : ""}>Weeks</option>
-        </select>
-      </label>
-      <label class="inline-toggle">Theme Mode
-        <input id="settings-theme-toggle" type="checkbox" ${isDark ? "checked" : ""} />
-        <span>${isDark ? "Dark" : "Light"}</span>
-      </label>
-      <div class="actions">
-        <button type="submit">Save Settings</button>
-      </div>
-    </form>
-    <p class="tile-label">Last updated: ${fmtDate(state.data.project.updated_at)}</p>
+  wrapper.innerHTML = `
+    <section class="card settings-section">
+      <h3>General Settings</h3>
+      <form id="general-settings-form" class="form-grid">
+        <label>Currency
+          <input name="currency" value="${state.data.project.currency}" required />
+        </label>
+        <label>Schedule Units
+          <select name="units">
+            <option value="Days" ${state.data.project.units === "Days" ? "selected" : ""}>Days</option>
+            <option value="Weeks" ${state.data.project.units === "Weeks" ? "selected" : ""}>Weeks</option>
+          </select>
+        </label>
+        <label class="inline-toggle">Theme
+          <input id="settings-theme-toggle" type="checkbox" ${isDark ? "checked" : ""} />
+          <span>${isDark ? "Dark" : "Light"}</span>
+        </label>
+        <div class="actions"><button type="submit">Save General</button></div>
+      </form>
+    </section>
+
+    <section class="card settings-section">
+      <h3>Project Settings</h3>
+      <form id="project-settings-form" class="form-grid">
+        <label>Project Value
+          <input name="baseline_cost" type="number" min="0" step="1" value="${state.data.project.baseline_cost}" required />
+        </label>
+        <label>Current Contingency
+          <input name="contingency" type="number" min="0" step="1" value="${state.data.project.contingency}" required />
+        </label>
+        <label>Current Completion Date
+          <input name="completion_date" type="date" value="${state.data.project.completion_date || ""}" required />
+        </label>
+        <label>Target P Value
+          <input name="target_p_value" type="number" min="0" max="100" step="1" value="${state.data.project.target_p_value ?? 80}" required />
+        </label>
+        <div class="actions"><button type="submit">Save Project</button></div>
+      </form>
+      <p class="tile-label">Last updated: ${fmtDate(state.data.project.updated_at)}</p>
+    </section>
   `;
 
-  const themeToggle = card.querySelector("#settings-theme-toggle");
-  const themeLabel = card.querySelector(".inline-toggle span");
+  const themeToggle = wrapper.querySelector("#settings-theme-toggle");
+  const themeLabel = wrapper.querySelector(".inline-toggle span");
   themeToggle.addEventListener("change", (event) => {
     handleThemeToggle(event);
     themeLabel.textContent = event.target.checked ? "Dark" : "Light";
   });
 
-  card.querySelector("#settings-form").onsubmit = (event) => {
+  wrapper.querySelector("#general-settings-form").onsubmit = (event) => {
     event.preventDefault();
     const form = new FormData(event.target);
     state.data.project = {
       ...state.data.project,
-      name: form.get("name"),
-      client: form.get("client"),
       currency: form.get("currency"),
-      baseline_cost: Number(form.get("baseline_cost")),
-      contingency: Number(form.get("contingency")),
       units: form.get("units"),
       updated_at: new Date().toISOString()
     };
@@ -696,7 +717,23 @@ function renderSettings() {
     render();
   };
 
-  pageContent.appendChild(card);
+  wrapper.querySelector("#project-settings-form").onsubmit = (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    state.data.project = {
+      ...state.data.project,
+      baseline_cost: Number(form.get("baseline_cost")),
+      contingency: Number(form.get("contingency")),
+      completion_date: form.get("completion_date"),
+      target_p_value: Number(form.get("target_p_value")),
+      updated_at: new Date().toISOString()
+    };
+    state.simulation.result = null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    render();
+  };
+
+  pageContent.appendChild(wrapper);
 }
 
 function renderRiskRegister() {
