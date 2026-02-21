@@ -651,45 +651,54 @@ function renderDashboard() {
 
 function renderSettings() {
   const wrapper = document.createElement("div");
-  wrapper.className = "grid-2";
+  wrapper.className = "settings-list";
   const isDark = document.body.classList.contains("dark-theme");
 
   wrapper.innerHTML = `
     <section class="card settings-section">
       <h3>General Settings</h3>
-      <form id="general-settings-form" class="form-grid">
-        <label>Currency
-          <input name="currency" value="${state.data.project.currency}" required />
-        </label>
-        <label>Schedule Units
-          <select name="units">
+      <form id="general-settings-form" class="settings-list-form">
+        <div class="setting-row">
+          <label for="settings-currency">Currency</label>
+          <input id="settings-currency" name="currency" value="${state.data.project.currency}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-units">Schedule Units</label>
+          <select id="settings-units" name="units">
             <option value="Days" ${state.data.project.units === "Days" ? "selected" : ""}>Days</option>
             <option value="Weeks" ${state.data.project.units === "Weeks" ? "selected" : ""}>Weeks</option>
           </select>
-        </label>
-        <label class="inline-toggle">Theme
-          <input id="settings-theme-toggle" type="checkbox" ${isDark ? "checked" : ""} />
-          <span>${isDark ? "Dark" : "Light"}</span>
-        </label>
+        </div>
+        <div class="setting-row">
+          <label for="settings-theme-toggle">Theme</label>
+          <label class="inline-toggle">
+            <input id="settings-theme-toggle" type="checkbox" ${isDark ? "checked" : ""} />
+            <span>${isDark ? "Dark" : "Light"}</span>
+          </label>
+        </div>
         <div class="actions"><button type="submit">Save General</button></div>
       </form>
     </section>
 
     <section class="card settings-section">
       <h3>Project Settings</h3>
-      <form id="project-settings-form" class="form-grid">
-        <label>Project Value
-          <input name="baseline_cost" type="number" min="0" step="1" value="${state.data.project.baseline_cost}" required />
-        </label>
-        <label>Current Contingency
-          <input name="contingency" type="number" min="0" step="1" value="${state.data.project.contingency}" required />
-        </label>
-        <label>Current Completion Date
-          <input name="completion_date" type="date" value="${state.data.project.completion_date || ""}" required />
-        </label>
-        <label>Target P Value
-          <input name="target_p_value" type="number" min="0" max="100" step="1" value="${state.data.project.target_p_value ?? 80}" required />
-        </label>
+      <form id="project-settings-form" class="settings-list-form">
+        <div class="setting-row">
+          <label for="settings-project-value">Project Value</label>
+          <input id="settings-project-value" name="baseline_cost" type="number" min="0" step="1" value="${state.data.project.baseline_cost}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-contingency">Current Contingency</label>
+          <input id="settings-contingency" name="contingency" type="number" min="0" step="1" value="${state.data.project.contingency}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-completion-date">Current Completion Date</label>
+          <input id="settings-completion-date" name="completion_date" type="date" value="${state.data.project.completion_date || ""}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-target-p">Target P Value</label>
+          <input id="settings-target-p" name="target_p_value" type="number" min="0" max="100" step="1" value="${state.data.project.target_p_value ?? 80}" required />
+        </div>
         <div class="actions"><button type="submit">Save Project</button></div>
       </form>
       <p class="tile-label">Last updated: ${fmtDate(state.data.project.updated_at)}</p>
