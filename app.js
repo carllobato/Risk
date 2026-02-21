@@ -402,15 +402,12 @@ function calcTargetValue(sortedValues, targetPValue) {
   return getPercentileValue(sortedValues, targetPValue);
 }
 
-function formatDeltaPair(deltaValue, baselineValue, unit = "") {
-  const baseline = Number(baselineValue || 0);
-  const pct = baseline === 0 ? 0 : (deltaValue / baseline) * 100;
+function formatDeltaPair(deltaValue, unit = "") {
   const sign = deltaValue >= 0 ? "+" : "-";
-  const valueText = unit
-    ? `${sign}${Math.abs(deltaValue).toFixed(1)} ${unit}`
-    : `${sign}${fmtNumber(Math.abs(deltaValue), true)}`;
-  const pctText = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
-  return `${valueText} (${pctText})`;
+  if (unit) {
+    return `${sign}${Math.abs(deltaValue).toFixed(1)} ${unit}`;
+  }
+  return `${sign}${fmtNumber(Math.abs(deltaValue), true)}`;
 }
 
 function lerpNumber(from, to, progress) {
@@ -583,8 +580,8 @@ function buildTopRiskTornadoEntries(simulationResult, type = "cost", limit = 5) 
   const isCost = type === "cost";
   const entries = (simulationResult?.riskContributions || []).map((entry) => ({
     label: entry.title,
-    low: Number(isCost ? entry.costLow : entry.scheduleLow) || 0,
-    high: Number(isCost ? entry.costHigh : entry.scheduleHigh) || 0
+    low: Math.max(0, Number(isCost ? entry.costLow : entry.scheduleLow) || 0),
+    high: Math.max(0, Number(isCost ? entry.costHigh : entry.scheduleHigh) || 0)
   }));
 
   return entries
@@ -903,105 +900,96 @@ function renderDistributionLineChart(title, values, options = {}) {
 }
 
 function renderDashboard() {
-  const metrics = calcMetrics();
   ensureSimulationResult();
-  const wrapper = document.createElement("div");
-  wrapper.className = "page-section";
+  const simulation = getDisplaySimulationResult() || state.simulation.result;
+  const metrics = calcMetrics();
+  const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
+  const contingencyDaysPValue = calcScheduleContingencyPValueFromResults(simulation?.scheduleResults);
+  const targetPValue = Math.max(0, Math.min(100, Number(state.data.project.target_p_value || 0)));
 
-  const contingencyPValue = calcContingencyPValue();
-  const targetScheduleDate = calcTargetCompletionDateFromResults(state.simulation.result?.scheduleResults);
+  const sortedCostResults = (simulation?.costResults || []).slice().sort((a, b) => a - b);
+  const sortedScheduleResults = (simulation?.scheduleResults || []).slice().sort((a, b) => a - b);
+  const targetCostValue = calcTargetValue(sortedCostResults, targetPValue);
+  const targetScheduleValue = calcTargetValue(sortedScheduleResults, targetPValue);
+  const commercialDeltaValue = Number(state.data.project.contingency || 0) - targetCostValue;
+  const scheduleDeltaValue = Number(state.data.project.contingency_days || 0) - targetScheduleValue;
 
-  const topFiveRisks = getActiveRisks()
-    .slice()
-    .sort((a, b) => b.probability * b.impact_cost_mid - a.probability * a.impact_cost_mid)
-    .slice(0, 5);
+  const topCostTornado = buildTopRiskTornadoEntries(simulation, "cost", 5);
+  const topScheduleTornado = buildTopRiskTornadoEntries(simulation, "schedule", 5);
 
-  const projectGroup = makeListCard("Project Details", [
-    { label: "Client", value: state.data.project.client || "N/A" },
-    { label: "Project Number", value: state.data.project.project_number || "N/A" },
-    { label: "Project Name", value: state.data.project.name || "N/A" },
-    { label: "Location", value: state.data.project.location || "N/A" },
-    { label: "Project Value", value: fmtNumber(state.data.project.baseline_cost, true) },
-    { label: "Contingency Fund", value: fmtNumber(state.data.project.contingency, true) },
-    { label: "Completion Date", value: formatDateOnly(state.data.project.completion_date) },
-    { label: "Current Allowance Date", value: calcCurrentAllowanceDate() },
-    { label: "Forecast Completion Date", value: calcForecastCompletionDate(metrics.expectedDays) }
+  const projectTiles = makeTileGroup("Project Details", [
+    makeCard("Client", state.data.project.client || "N/A"),
+    makeCard("Project Number", state.data.project.project_number || "N/A"),
+    makeCard("Project Name", state.data.project.name || "N/A"),
+    makeCard("Location", state.data.project.location || "N/A"),
+    makeCard("Project Value", fmtNumber(state.data.project.baseline_cost, true)),
+    makeCard("Commercial Contingency", fmtNumber(state.data.project.contingency, true)),
+    makeCard("Completion Date", formatDateOnly(state.data.project.completion_date)),
+    makeCard("Schedule Contingency", `${Number(state.data.project.contingency_days || 0).toFixed(1)} days`),
+    makeCard("Target P Value", `P${targetPValue.toFixed(0)}`)
   ]);
 
-  const riskAllocationGroup = makeListCard("Risk Allocation", [
-    { label: "Current P Value", value: formatPValue(contingencyPValue) },
-    { label: "Open Risks", value: String(metrics.openCount) },
-    { label: "Expected Cost Exposure", value: fmtNumber(metrics.expectedCost, true) },
-    { label: "Expected Schedule Exposure", value: `${metrics.expectedDays.toFixed(1)} ${state.data.project.units.toLowerCase()}` },
-    { label: `Target P${Number(state.data.project.target_p_value || 0).toFixed(0)} Completion`, value: targetScheduleDate }
+  const simulationTiles = makeTileGroup("Simulation Results", [
+    makeCard("Current Commercial P-value", formatPValueWithRag(contingencyPValue, targetPValue)),
+    makeCard("Commercial Delta to Target", formatDeltaPair(commercialDeltaValue)),
+    makeCard("Current Schedule P-value", formatPValueWithRag(contingencyDaysPValue, targetPValue)),
+    makeCard("Schedule Delta to Target", formatDeltaPair(scheduleDeltaValue, "days")),
+    makeCard("Open Risks", String(metrics.openCount)),
+    makeCard("Expected Cost Exposure", fmtNumber(metrics.expectedCost, true)),
+    makeCard("Expected Schedule Exposure", `${metrics.expectedDays.toFixed(1)} ${state.data.project.units.toLowerCase()}`),
+    makeCard("Target Completion", calcTargetCompletionDateFromResults(simulation?.scheduleResults))
   ]);
 
-  const topRiskRows =
-    topFiveRisks.length > 0
-      ? topFiveRisks.map((risk, index) => ({
-          label: `${index + 1}. ${risk.title}`,
-          value: `${fmtNumber(risk.probability * risk.impact_cost_mid, true)} | ${(
-            risk.probability * risk.impact_days_mid
-          ).toFixed(1)} ${state.data.project.units.toLowerCase()}`
-        }))
-      : [{ label: "No active risks", value: "N/A" }];
+  const commercialTiles = makeTileGroup("Commercial", [
+    makeCard("P50 Cost", fmtNumber(simulation?.costStats?.p50 || 0, true)),
+    makeCard("P80 Cost", fmtNumber(simulation?.costStats?.p80 || 0, true)),
+    makeCard("P90 Cost", fmtNumber(simulation?.costStats?.p90 || 0, true))
+  ]);
 
-  const topRisksGroup = makeListCard("Top 5 Risks (Cost | Programme)", topRiskRows);
+  const scheduleTiles = makeTileGroup("Schedule", [
+    makeCard("P50 Schedule (days)", Number(simulation?.scheduleStats?.p50 || 0).toFixed(1)),
+    makeCard("P80 Schedule (days)", Number(simulation?.scheduleStats?.p80 || 0).toFixed(1)),
+    makeCard("P90 Schedule (days)", Number(simulation?.scheduleStats?.p90 || 0).toFixed(1))
+  ]);
 
-  const statusCounts = statuses.map((status) => ({
-    label: status,
-    value: String(state.data.risks.filter((risk) => risk.status === status).length)
-  }));
-  const statusGroup = makeListCard("Risk Status", statusCounts);
+  const dashboardLayout = document.createElement("div");
+  dashboardLayout.className = "grid-2 outputs-layout";
+  projectTiles.classList.add("output-project-full");
+  simulationTiles.classList.add("output-project-full");
 
-  const categoryCounts = categories.map((category) => ({
-    label: category,
-    value: String(state.data.risks.filter((risk) => risk.category === category).length)
-  }));
-  const categoryGroup = makeListCard("Risks per Category", categoryCounts);
+  const commercialRag = getRagStatus(contingencyPValue?.percentile, targetPValue);
+  const scheduleRag = getRagStatus(contingencyDaysPValue?.percentile, targetPValue);
 
-  const groupedTiles = document.createElement("div");
-  groupedTiles.className = "grid-2";
-  groupedTiles.append(projectGroup, riskAllocationGroup, topRisksGroup, statusGroup, categoryGroup);
-
-  const activeRisks = getActiveRisks();
-  const topCostVisual = activeRisks
-    .slice()
-    .sort((a, b) => b.probability * b.impact_cost_mid - a.probability * a.impact_cost_mid)
-    .slice(0, 5)
-    .map((risk) => ({ label: risk.title, value: risk.probability * risk.impact_cost_mid }));
-
-  const topTimeVisual = activeRisks
-    .slice()
-    .sort((a, b) => b.probability * b.impact_days_mid - a.probability * a.impact_days_mid)
-    .slice(0, 5)
-    .map((risk) => ({ label: risk.title, value: risk.probability * risk.impact_days_mid }));
-
-  const statusBars = statuses.map((status) => ({
-    label: status,
-    value: state.data.risks.filter((risk) => risk.status === status).length
-  }));
-
-  const categoryBars = categories.map((category) => ({
-    label: category,
-    value: state.data.risks.filter((risk) => risk.category === category).length
-  }));
-
-  const visualGrid = document.createElement("div");
-  visualGrid.className = "grid-2";
-  visualGrid.append(
-    renderBarChart("Top Cost Risks", topCostVisual, (v) => fmtNumber(v, true)),
-    renderBarChart(
-      "Top Time Risks",
-      topTimeVisual,
-      (v) => `${v.toFixed(1)} ${state.data.project.units.toLowerCase()}`
-    ),
-    renderBarChart("Risk Status", statusBars, (v) => String(v)),
-    renderBarChart("Risks by Category", categoryBars, (v) => String(v))
+  const commercialColumn = document.createElement("div");
+  commercialColumn.className = "outputs-column";
+  commercialColumn.append(
+    commercialTiles,
+    renderDistributionLineChart("Cost Distribution", simulation?.costResults || [], {
+      projectPercentile: contingencyPValue?.percentile,
+      projectLabel: "Current project P-value",
+      projectLineClass: `chart-project-line ${commercialRag.className}`,
+      referenceLines: [{ percentile: targetPValue, label: `Target P${targetPValue.toFixed(0)}`, className: "chart-target-line" }],
+      valueFormatter: (value) => fmtNumber(value, true)
+    }),
+    renderTornadoChart("Top 5 Cost Risks (Tornado)", topCostTornado, (value) => fmtNumber(value, true), "cost exposure")
   );
 
-  wrapper.append(groupedTiles, visualGrid);
-  pageContent.appendChild(wrapper);
+  const scheduleColumn = document.createElement("div");
+  scheduleColumn.className = "outputs-column";
+  scheduleColumn.append(
+    scheduleTiles,
+    renderDistributionLineChart("Schedule Distribution", simulation?.scheduleResults || [], {
+      projectPercentile: contingencyDaysPValue?.percentile,
+      projectLabel: "Current contingency days",
+      projectLineClass: `chart-project-line ${scheduleRag.className}`,
+      referenceLines: [{ percentile: targetPValue, label: `Target P${targetPValue.toFixed(0)}`, className: "chart-target-line" }],
+      valueFormatter: (value) => `${value.toFixed(1)}d`
+    }),
+    renderTornadoChart("Top 5 Schedule Risks (Tornado)", topScheduleTornado, (value) => `${value.toFixed(1)}d`, "schedule impact")
+  );
+
+  dashboardLayout.append(projectTiles, simulationTiles, commercialColumn, scheduleColumn);
+  pageContent.append(dashboardLayout);
 }
 
 function renderSettings() {
@@ -1348,19 +1336,19 @@ function renderOutputs() {
   const sortedScheduleResults = simulation.scheduleResults.slice().sort((a, b) => a - b);
   const targetCostValue = calcTargetValue(sortedCostResults, targetPValue);
   const targetScheduleValue = calcTargetValue(sortedScheduleResults, targetPValue);
-  const commercialDeltaValue = targetCostValue - Number(state.data.project.contingency || 0);
-  const scheduleDeltaValue = targetScheduleValue - Number(state.data.project.contingency_days || 0);
+  const commercialDeltaValue = Number(state.data.project.contingency || 0) - targetCostValue;
+  const scheduleDeltaValue = Number(state.data.project.contingency_days || 0) - targetScheduleValue;
 
   const simulationSummaryTiles = makeTileGroup("Simulation Results", [
     makeCard("Current Commercial P-value", formatPValueWithRag(contingencyPValue, targetPValue)),
     makeCard(
       "Commercial Delta to Target",
-      formatDeltaPair(commercialDeltaValue, Number(state.data.project.contingency || 0))
+      formatDeltaPair(commercialDeltaValue)
     ),
     makeCard("Current Schedule P-value", formatPValueWithRag(contingencyDaysPValue, targetPValue)),
     makeCard(
       "Schedule Delta to Target",
-      formatDeltaPair(scheduleDeltaValue, Number(state.data.project.contingency_days || 0), "days")
+      formatDeltaPair(scheduleDeltaValue, "days")
     )
   ]);
 

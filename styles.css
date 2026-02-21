@@ -181,10 +181,13 @@ body.dark-theme .brand-logo-dark {
 }
 
 .top-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 1.1rem 1.25rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
   background: var(--header-bg);
   width: 100%;
@@ -245,14 +248,14 @@ body.dark-theme .brand-logo-dark {
 }
 
 .tile-value {
-  font-size: 1.35rem;
+  font-size: 1.45rem;
   margin-top: 0.45rem;
   font-weight: 600;
 }
 
 .tile-label {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.88rem;
 }
 
 
@@ -441,8 +444,9 @@ body.dark-theme .brand-logo-dark {
 
 .chart-target-line {
   stroke: #ffffff;
-  stroke-width: 1.8;
-  stroke-dasharray: 4 4;
+  stroke-width: 2;
+  stroke-dasharray: none;
+  stroke-linecap: square;
   filter: drop-shadow(0 0 1px rgba(15, 23, 42, 0.85));
   cursor: pointer;
 }
@@ -666,6 +670,7 @@ tr:hover {
 
 .tornado-chart {
   position: relative;
+  overflow: visible;
   display: grid;
   gap: 0.7rem;
 }
@@ -758,4 +763,9 @@ body.dark-theme .tornado-bar-high {
   .tornado-values {
     text-align: left;
   }
+}
+
+
+.tornado-chart .chart-tooltip {
+  z-index: 20;
 }
