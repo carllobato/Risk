@@ -627,15 +627,20 @@ function renderTornadoChart(title, entries, formatter = (v) => String(v), typeLa
 
   const tooltip = card.querySelector(".chart-tooltip");
   card.querySelectorAll("[data-tooltip]").forEach((element) => {
-    element.addEventListener("mouseenter", () => {
-      tooltip.textContent = element.dataset.tooltip;
-      tooltip.classList.remove("tooltip-hidden");
-    });
-
-    element.addEventListener("mousemove", (event) => {
+    const positionTooltip = (event) => {
       const bounds = card.getBoundingClientRect();
       tooltip.style.left = `${event.clientX - bounds.left + 10}px`;
       tooltip.style.top = `${event.clientY - bounds.top - 10}px`;
+    };
+
+    element.addEventListener("mouseenter", (event) => {
+      tooltip.textContent = element.dataset.tooltip;
+      tooltip.classList.remove("tooltip-hidden");
+      positionTooltip(event);
+    });
+
+    element.addEventListener("mousemove", (event) => {
+      positionTooltip(event);
     });
 
     element.addEventListener("mouseleave", () => {
