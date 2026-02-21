@@ -394,6 +394,25 @@ function calcTargetCompletionDateFromResults(scheduleResults) {
   return calcForecastCompletionDate(scheduleAtTarget);
 }
 
+
+function calcTargetValue(sortedValues, targetPValue) {
+  if (!sortedValues || !sortedValues.length) {
+    return 0;
+  }
+  return getPercentileValue(sortedValues, targetPValue);
+}
+
+function formatDeltaPair(deltaValue, baselineValue, unit = "") {
+  const baseline = Number(baselineValue || 0);
+  const pct = baseline === 0 ? 0 : (deltaValue / baseline) * 100;
+  const sign = deltaValue >= 0 ? "+" : "-";
+  const valueText = unit
+    ? `${sign}${Math.abs(deltaValue).toFixed(1)} ${unit}`
+    : `${sign}${fmtNumber(Math.abs(deltaValue), true)}`;
+  const pctText = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+  return `${valueText} (${pctText})`;
+}
+
 function lerpNumber(from, to, progress) {
   return from + (to - from) * progress;
 }
@@ -1187,15 +1206,24 @@ function renderOutputs() {
     makeCard("Target P Value", `P${targetPValue.toFixed(0)}`)
   ]);
 
-  const commercialDelta = (contingencyPValue?.percentile ?? 0) - targetPValue;
-  const scheduleDelta = (contingencyDaysPValue?.percentile ?? 0) - targetPValue;
-  const formatDelta = (delta) => `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pts`;
+  const sortedCostResults = simulation.costResults.slice().sort((a, b) => a - b);
+  const sortedScheduleResults = simulation.scheduleResults.slice().sort((a, b) => a - b);
+  const targetCostValue = calcTargetValue(sortedCostResults, targetPValue);
+  const targetScheduleValue = calcTargetValue(sortedScheduleResults, targetPValue);
+  const commercialDeltaValue = targetCostValue - Number(state.data.project.contingency || 0);
+  const scheduleDeltaValue = targetScheduleValue - Number(state.data.project.contingency_days || 0);
 
   const simulationSummaryTiles = makeTileGroup("Simulation Results", [
     makeCard("Current Commercial P-value", formatPValue(contingencyPValue)),
-    makeCard("Commercial Delta to Target", formatDelta(commercialDelta)),
+    makeCard(
+      "Commercial Delta to Target",
+      formatDeltaPair(commercialDeltaValue, Number(state.data.project.contingency || 0))
+    ),
     makeCard("Current Schedule P-value", formatPValue(contingencyDaysPValue)),
-    makeCard("Schedule Delta to Target", formatDelta(scheduleDelta))
+    makeCard(
+      "Schedule Delta to Target",
+      formatDeltaPair(scheduleDeltaValue, Number(state.data.project.contingency_days || 0), "days")
+    )
   ]);
 
   const commercialTiles = makeTileGroup("Commercial", [

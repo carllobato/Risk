@@ -10,6 +10,8 @@
   --sidebar-bg: #f8fafc;
   --header-bg: #ffffff;
   --track-bg: #e8edf5;
+  --input-bg: #eef3fb;
+  --input-text: #1f2937;
 }
 
 body.dark-theme {
@@ -24,6 +26,8 @@ body.dark-theme {
   --sidebar-bg: #0f172a;
   --header-bg: #111827;
   --track-bg: #374151;
+  --input-bg: #243041;
+  --input-text: #e5e7eb;
 }
 
 * {
@@ -192,6 +196,10 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1.25rem;
   row-gap: 1.25rem;
+}
+
+.tiles .card {
+  text-align: center;
 }
 
 .tile-group {
@@ -385,11 +393,23 @@ select {
   padding: 0.6rem 0.65rem;
   border-radius: 8px;
   border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--input-text);
   font: inherit;
+}
+
+input,
+select {
+  height: 2.5rem;
 }
 
 textarea {
   min-height: 75px;
+}
+
+input[type="checkbox"],
+input[type="range"] {
+  height: auto;
 }
 
 .form-grid {
