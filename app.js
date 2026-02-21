@@ -547,7 +547,7 @@ function renderDistributionLineChart(title, values, options = {}) {
 
   card.innerHTML = `
     <h3>${title}</h3>
-    <svg class="distribution-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${title}">
+    <svg class="distribution-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${title}">
       <defs>
         <linearGradient id="grad-${chartId}" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.35" />
@@ -555,7 +555,6 @@ function renderDistributionLineChart(title, values, options = {}) {
         </linearGradient>
       </defs>
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="chart-axis" />
-      <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" class="chart-axis" />
       <line x1="${padX}" y1="${padY + usableH / 2}" x2="${width - padX}" y2="${padY + usableH / 2}" class="chart-grid" />
       <path d="${areaPath}" class="chart-area" style="fill:url(#grad-${chartId})" />
       <path d="${linePath}" class="chart-line" />
@@ -563,8 +562,6 @@ function renderDistributionLineChart(title, values, options = {}) {
       ${markerElements}
       <text x="${padX}" y="${height - 2}" class="chart-tick">${formatter(xMin)}</text>
       <text x="${width - padX}" y="${height - 2}" text-anchor="end" class="chart-tick">${formatter(xMax)}</text>
-      <text x="${padX - 6}" y="${height - padY + 4}" text-anchor="end" class="chart-tick">${yMin.toExponential(1)}</text>
-      <text x="${padX - 6}" y="${padY + 4}" text-anchor="end" class="chart-tick">${yMax.toExponential(1)}</text>
     </svg>
     <div class="chart-tooltip tooltip-hidden"></div>
   `;
@@ -591,7 +588,6 @@ function renderDistributionLineChart(title, values, options = {}) {
 }
 
 function renderDashboard() {
-  const metrics = calcMetrics();
   const wrapper = document.createElement("div");
   wrapper.className = "page-section";
 
@@ -833,7 +829,6 @@ function closeRiskModal() {
 }
 
 function renderOutputs() {
-  const metrics = calcMetrics();
   const controls = document.createElement("div");
   controls.className = "card";
   controls.innerHTML = `
@@ -841,7 +836,6 @@ function renderOutputs() {
       <h3 style="margin-right:auto;">Simulation Outputs</h3>
       <button id="run-simulation">Run Simulation</button>
     </div>
-    <p class="tile-label">Simulation runs 100 probabilistic iterations based on risk likelihood and impact ranges.</p>
   `;
 
   const runBtn = controls.querySelector("#run-simulation");
@@ -870,15 +864,6 @@ function renderOutputs() {
 
   const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
 
-  const comparison = document.createElement("div");
-  comparison.className = "card";
-  comparison.innerHTML = `
-    <h3>Deterministic vs Simulated Cost</h3>
-    <p>Deterministic Expected Cost: <strong>${fmtNumber(metrics.expectedCost, true)}</strong></p>
-    <p>Simulated Mean Cost: <strong>${fmtNumber(simulation.costStats.mean, true)}</strong></p>
-    <p>Current contingency (${fmtNumber(state.data.project.contingency, true)}) aligns to: <strong>${formatPValue(contingencyPValue)}</strong></p>
-  `;
-
   const projectTiles = makeTileGroup("Project Details", [
     makeCard("Baseline cost", fmtNumber(state.data.project.baseline_cost, true)),
     makeCard("Contingency", fmtNumber(state.data.project.contingency, true)),
@@ -903,29 +888,6 @@ function renderOutputs() {
   groupedOutputTiles.className = "grid-2";
   groupedOutputTiles.append(projectTiles, commercialTiles, scheduleTiles);
 
-  const costStatsCard = document.createElement("div");
-  costStatsCard.className = "card";
-  costStatsCard.innerHTML = `
-    <h3>Cost Statistics</h3>
-    <p>Mean: <strong>${fmtNumber(simulation.costStats.mean, true)}</strong></p>
-    <p>Median: <strong>${fmtNumber(simulation.costStats.median, true)}</strong></p>
-    <p>P50: <strong>${fmtNumber(simulation.costStats.p50, true)}</strong></p>
-    <p>P80: <strong>${fmtNumber(simulation.costStats.p80, true)}</strong></p>
-    <p>P90: <strong>${fmtNumber(simulation.costStats.p90, true)}</strong></p>
-    <p>Min: <strong>${fmtNumber(simulation.costStats.min, true)}</strong></p>
-    <p>Max: <strong>${fmtNumber(simulation.costStats.max, true)}</strong></p>
-  `;
-
-  const scheduleStatsCard = document.createElement("div");
-  scheduleStatsCard.className = "card";
-  scheduleStatsCard.innerHTML = `
-    <h3>Schedule Statistics</h3>
-    <p>Mean: <strong>${simulation.scheduleStats.mean.toFixed(1)} days</strong></p>
-    <p>P50: <strong>${simulation.scheduleStats.p50.toFixed(1)} days</strong></p>
-    <p>P80: <strong>${simulation.scheduleStats.p80.toFixed(1)} days</strong></p>
-    <p>P90: <strong>${simulation.scheduleStats.p90.toFixed(1)} days</strong></p>
-  `;
-
   const chartGrid = document.createElement("div");
   chartGrid.className = "grid-2";
   chartGrid.append(
@@ -939,9 +901,8 @@ function renderOutputs() {
     })
   );
 
-  pageContent.append(comparison, groupedOutputTiles);
+  pageContent.append(groupedOutputTiles);
   pageContent.appendChild(chartGrid);
-  pageContent.append(costStatsCard, scheduleStatsCard);
 }
 
 function runSimulation() {
