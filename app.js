@@ -1138,13 +1138,15 @@ function renderOutputs() {
     makeCard("Contingency days", Number(state.data.project.contingency_days || 0).toFixed(1))
   ]);
 
-  const groupedOutputTiles = document.createElement("div");
-  groupedOutputTiles.className = "grid-2";
-  groupedOutputTiles.append(projectTiles, commercialTiles, scheduleTiles);
+  const outputLayout = document.createElement("div");
+  outputLayout.className = "grid-2 outputs-layout";
 
-  const chartGrid = document.createElement("div");
-  chartGrid.className = "grid-2";
-  chartGrid.append(
+  projectTiles.classList.add("output-project-full");
+
+  const commercialColumn = document.createElement("div");
+  commercialColumn.className = "outputs-column";
+  commercialColumn.append(
+    commercialTiles,
     renderDistributionLineChart("Cost Distribution", simulation.costResults, {
       projectPercentile: contingencyPValue?.percentile,
       projectLabel: "Current project P-value",
@@ -1156,7 +1158,13 @@ function renderOutputs() {
         }
       ],
       valueFormatter: (value) => fmtNumber(value, true)
-    }),
+    })
+  );
+
+  const scheduleColumn = document.createElement("div");
+  scheduleColumn.className = "outputs-column";
+  scheduleColumn.append(
+    scheduleTiles,
     renderDistributionLineChart("Schedule Distribution", simulation.scheduleResults, {
       projectPercentile: contingencyDaysPValue?.percentile,
       projectLabel: "Current contingency days",
@@ -1171,8 +1179,8 @@ function renderOutputs() {
     })
   );
 
-  pageContent.append(groupedOutputTiles);
-  pageContent.appendChild(chartGrid);
+  outputLayout.append(projectTiles, commercialColumn, scheduleColumn);
+  pageContent.append(outputLayout);
 }
 
 function runSimulation() {
