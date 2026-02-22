@@ -849,3 +849,51 @@ body.dark-theme .tornado-bar-high {
 .tornado-chart .chart-tooltip {
   z-index: 20;
 }
+
+
+.portfolio-tile {
+  border: 1px solid var(--border);
+  text-align: left;
+  width: 100%;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.wizard-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 22, 0.45);
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.wizard-modal {
+  width: min(760px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.wizard-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.wizard-form label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.wizard-form p {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .wizard-form {
+    grid-template-columns: 1fr;
+  }
+}

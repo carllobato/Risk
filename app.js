@@ -1,6 +1,6 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
 const THEME_KEY = "risk-mvp-theme";
-const APP_VERSION = "v1.4.0 (2026-02-22 12:10 UTC)";
+const APP_VERSION = "v1.5.0 (2026-02-22 13:05 UTC)";
 const PORTFOLIO_ITEMS = ["Portfolio Overview", "Portfolio Risk"];
 const NAV_ITEMS = ["Dashboard", "Risk Register", "Analysis"];
 const SETTINGS_PAGE = "Settings";
@@ -166,6 +166,7 @@ const defaultData = {
 const state = {
   data: loadData(),
   page: "Dashboard",
+  activeProjectId: "p-1",
   editingRiskId: null,
   simulation: {
     isRunning: false,
@@ -258,10 +259,12 @@ function ensurePortfolioProjects(data) {
 
   const current = data.project || {};
   byId.set(current.id, {
+    ...byId.get(current.id),
+    ...current,
     id: current.id,
     name: current.name || "Unnamed Project",
     client: current.client || "",
-    stage: current.project_stage || "Planning",
+    project_stage: current.project_stage || "Planning",
     baseline_cost: Number(current.baseline_cost || 0),
     updated_at: current.updated_at || new Date().toISOString()
   });
@@ -348,6 +351,7 @@ function loadData() {
 
 function saveData() {
   state.data.project.updated_at = new Date().toISOString();
+  state.activeProjectId = state.data.project.id;
   syncCurrentProjectToPortfolio();
   state.simulation.result = null;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
@@ -391,7 +395,7 @@ function fmtDate(iso) {
 }
 
 function getActiveRisks() {
-  return state.data.risks.filter((risk) => risk.status !== "Closed");
+  return getCurrentProjectRisks().filter((risk) => risk.status !== "Closed");
 }
 
 function calcMetrics() {
@@ -637,10 +641,25 @@ function formatPValueWithRag(pValue, targetPercentile) {
 function ensureSimulationResult() {
   if (!state.simulation.result && window.SimulationEngine) {
     state.simulation.result = window.SimulationEngine.runMonteCarlo(
-      state.data.risks,
+      getCurrentProjectRisks(),
       state.simulation.iterations
     );
   }
+}
+
+
+function getCurrentProjectRisks() {
+  return state.data.risks.filter((risk) => risk.project_id === state.data.project.id);
+}
+
+function setActiveProject(projectId) {
+  const project = (state.data.portfolio_projects || []).find((item) => item.id === projectId);
+  if (!project) return;
+  state.activeProjectId = project.id;
+  state.data.project = { ...structuredClone(defaultData.project), ...structuredClone(project), id: project.id };
+  state.page = "Dashboard";
+  state.simulation.result = null;
+  render();
 }
 
 function renderNav() {
@@ -665,7 +684,9 @@ function renderNav() {
   };
 
   addSection("Portfolio", PORTFOLIO_ITEMS);
-  addSection("Project", NAV_ITEMS);
+  if (!PORTFOLIO_ITEMS.includes(state.page)) {
+    addSection("Project", NAV_ITEMS);
+  }
 }
 
 function makeCard(label, value) {
@@ -1099,12 +1120,12 @@ function renderPortfolioOverview() {
   const tiles = (state.data.portfolio_projects || [])
     .map(
       (project) => `
-      <article class="portfolio-tile card">
+      <button type="button" class="portfolio-tile card" data-project-id="${project.id}">
         <div class="tile-label">${project.client || "Client not set"}</div>
         <div class="tile-value">${project.name || "Unnamed Project"}</div>
-        <div class="tile-label">Stage: ${project.stage || "Planning"}</div>
+        <div class="tile-label">Stage: ${project.project_stage || "Planning"}</div>
         <div class="tile-label">Value: ${fmtNumber(project.baseline_cost || 0, true)}</div>
-      </article>
+      </button>
     `
     )
     .join("");
@@ -1122,27 +1143,125 @@ function renderPortfolioOverview() {
     </div>
   `;
 
+  section.querySelectorAll(".portfolio-tile[data-project-id]").forEach((tile) => {
+    tile.onclick = () => setActiveProject(tile.dataset.projectId);
+  });
+
   section.querySelector("#add-portfolio-project").onclick = () => {
-    const name = prompt("New project name");
-    if (!name) return;
-    const client = prompt("Client", "") || "";
-    const baseline = Number(prompt("Project value", "0") || 0);
-    const stage = prompt("Project stage", "Planning") || "Planning";
-    state.data.portfolio_projects = [
-      ...(state.data.portfolio_projects || []),
-      {
-        id: `p-${Date.now()}`,
-        name: name.trim(),
-        client: client.trim(),
-        stage: stage.trim(),
-        baseline_cost: baseline,
-        updated_at: new Date().toISOString()
-      }
-    ];
-    saveData();
+    openNewProjectWizard();
   };
 
   pageContent.appendChild(section);
+}
+
+function openNewProjectWizard() {
+  const defaults = {
+    name: "",
+    client: "",
+    project_number: "",
+    location: "",
+    project_stage: "Planning",
+    currency: state.data.project.currency || "USD",
+    units: state.data.project.units || "Days",
+    number_scale: state.data.project.number_scale || "millions",
+    currency_decimals: state.data.project.currency_decimals ?? 2,
+    date_format: state.data.project.date_format || "DD/MM/YYYY",
+    chart_label_mode: state.data.project.chart_label_mode || "hover",
+    baseline_cost: 0,
+    contingency: 0,
+    completion_date: state.data.project.completion_date || "",
+    contingency_days: 20,
+    target_p_value: 80,
+    collaboration_lead: "",
+    collaboration_email: ""
+  };
+
+  let step = 1;
+  const backdrop = document.createElement("div");
+  backdrop.className = "wizard-backdrop";
+
+  const renderStep = () => {
+    const stepTitle = step === 1 ? "General Settings" : step === 2 ? "Project Settings" : "Collaboration";
+    const stepContent = step === 1
+      ? `
+      <label>Currency <input name="currency" value="${defaults.currency}" /></label>
+      <label>Schedule Units <select name="units"><option value="Days" ${defaults.units === "Days" ? "selected" : ""}>Days</option><option value="Weeks" ${defaults.units === "Weeks" ? "selected" : ""}>Weeks</option></select></label>
+      <label>Rounding/Scale <select name="number_scale"><option value="millions" ${defaults.number_scale === "millions" ? "selected" : ""}>Millions</option><option value="full" ${defaults.number_scale === "full" ? "selected" : ""}>Full</option></select></label>
+      <label>Currency Decimals <input type="number" min="0" max="4" name="currency_decimals" value="${defaults.currency_decimals}" /></label>
+      <label>Date Format <select name="date_format"><option value="DD/MM/YYYY" ${defaults.date_format === "DD/MM/YYYY" ? "selected" : ""}>DD/MM/YYYY</option><option value="MM/DD/YYYY" ${defaults.date_format === "MM/DD/YYYY" ? "selected" : ""}>MM/DD/YYYY</option><option value="YYYY-MM-DD" ${defaults.date_format === "YYYY-MM-DD" ? "selected" : ""}>YYYY-MM-DD</option></select></label>
+      <label>Chart Label Mode <select name="chart_label_mode"><option value="hover" ${defaults.chart_label_mode === "hover" ? "selected" : ""}>Hover</option><option value="callout" ${defaults.chart_label_mode === "callout" ? "selected" : ""}>Callout</option></select></label>
+      `
+      : step === 2
+      ? `
+      <label>Project Name <input name="name" value="${defaults.name}" required /></label>
+      <label>Client <input name="client" value="${defaults.client}" /></label>
+      <label>Project Number <input name="project_number" value="${defaults.project_number}" /></label>
+      <label>Location <input name="location" value="${defaults.location}" /></label>
+      <label>Project Stage <input name="project_stage" value="${defaults.project_stage}" /></label>
+      <label>Project Value <input type="number" min="0" name="baseline_cost" value="${defaults.baseline_cost}" /></label>
+      <label>Commercial Contingency <input type="number" min="0" name="contingency" value="${defaults.contingency}" /></label>
+      <label>Completion Date <input type="date" name="completion_date" value="${defaults.completion_date}" /></label>
+      <label>Schedule Contingency Days <input type="number" min="0" step="0.1" name="contingency_days" value="${defaults.contingency_days}" /></label>
+      <label>Target P Value <input type="number" min="0" max="100" step="10" name="target_p_value" value="${defaults.target_p_value}" /></label>
+      `
+      : `
+      <label>Collaboration Lead <input name="collaboration_lead" value="${defaults.collaboration_lead}" /></label>
+      <label>Collaboration Email <input type="email" name="collaboration_email" value="${defaults.collaboration_email}" /></label>
+      <p class="tile-label">These collaboration fields help set ownership context for the project.</p>
+      `;
+
+    backdrop.innerHTML = `
+      <div class="wizard-modal card">
+        <div class="actions"><h3 style="margin-right:auto;">Add New Project</h3><span class="tile-label">Step ${step} of 3 — ${stepTitle}</span></div>
+        <form class="wizard-form">${stepContent}</form>
+        <div class="actions" style="justify-content:flex-end; margin-top:1rem;">
+          <button type="button" class="secondary" id="wizard-cancel">Cancel</button>
+          ${step > 1 ? '<button type="button" class="secondary" id="wizard-back">Back</button>' : ''}
+          ${step < 3 ? '<button type="button" id="wizard-next">Next</button>' : '<button type="button" id="wizard-save">Create Project</button>'}
+        </div>
+      </div>
+    `;
+
+    const form = backdrop.querySelector('.wizard-form');
+    form.querySelectorAll('input, select').forEach((field) => {
+      field.oninput = field.onchange = (event) => {
+        const key = event.target.name;
+        defaults[key] = event.target.type === 'number' ? Number(event.target.value || 0) : event.target.value;
+      };
+    });
+
+    backdrop.querySelector('#wizard-cancel').onclick = () => backdrop.remove();
+    if (step > 1) backdrop.querySelector('#wizard-back').onclick = () => { step -= 1; renderStep(); };
+    if (step < 3) backdrop.querySelector('#wizard-next').onclick = () => { step += 1; renderStep(); };
+    if (step === 3) {
+      backdrop.querySelector('#wizard-save').onclick = () => {
+        if (!String(defaults.name || '').trim()) {
+          alert('Project name is required.');
+          step = 2;
+          renderStep();
+          return;
+        }
+        const id = `p-${Date.now()}`;
+        const newProject = {
+          ...structuredClone(state.data.project),
+          ...defaults,
+          id,
+          name: String(defaults.name || '').trim(),
+          updated_at: new Date().toISOString()
+        };
+        state.data.portfolio_projects = [...(state.data.portfolio_projects || []), newProject];
+        state.data.project = newProject;
+        state.activeProjectId = id;
+        state.page = 'Dashboard';
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+        backdrop.remove();
+        render();
+      };
+    }
+  };
+
+  renderStep();
+  document.body.appendChild(backdrop);
 }
 
 function renderPortfolioRisk() {
@@ -1207,12 +1326,13 @@ function renderDashboard() {
   ensureSimulationResult();
   const simulation = getDisplaySimulationResult() || state.simulation.result;
   const metrics = calcMetrics();
-  const totalRisks = state.data.risks.length;
-  const openCount = state.data.risks.filter((risk) => risk.status === "Open").length;
-  const mitigatingCount = state.data.risks.filter((risk) => risk.status === "Mitigating").length;
-  const closedCount = state.data.risks.filter((risk) => risk.status === "Closed").length;
-  const riskValueIdentified = state.data.risks.reduce((sum, risk) => sum + Number(risk.impact_cost_mid || 0), 0);
-  const scheduleRiskIdentified = state.data.risks.reduce((sum, risk) => sum + Number(risk.impact_days_mid || 0), 0);
+  const projectRisks = getCurrentProjectRisks();
+  const totalRisks = projectRisks.length;
+  const openCount = projectRisks.filter((risk) => risk.status === "Open").length;
+  const mitigatingCount = projectRisks.filter((risk) => risk.status === "Mitigating").length;
+  const closedCount = projectRisks.filter((risk) => risk.status === "Closed").length;
+  const riskValueIdentified = projectRisks.reduce((sum, risk) => sum + Number(risk.impact_cost_mid || 0), 0);
+  const scheduleRiskIdentified = projectRisks.reduce((sum, risk) => sum + Number(risk.impact_days_mid || 0), 0);
 
   const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
   const contingencyDaysPValue = calcScheduleContingencyPValueFromResults(simulation?.scheduleResults);
@@ -1519,7 +1639,7 @@ function getRiskRegisterRows() {
   const applyTextFilter = text.length >= 2;
   const criteria = String(filterValue || "").trim().toLowerCase();
 
-  return state.data.risks
+  return getCurrentProjectRisks()
     .filter((risk) => {
       if (!applyTextFilter) {
         return true;
@@ -1660,7 +1780,7 @@ function renderRiskRegister() {
       event.stopPropagation();
       const id = btn.dataset.id;
       if (confirm("Delete this risk?")) {
-        state.data.risks = state.data.risks.filter((risk) => risk.id !== id);
+        state.data.risks = state.data.risks.filter((risk) => risk.id !== id || risk.project_id !== state.data.project.id);
         saveData();
       }
     };
@@ -2001,7 +2121,7 @@ function runSimulation() {
 
   setTimeout(() => {
     const nextResult = window.SimulationEngine.runMonteCarlo(
-      state.data.risks,
+      getCurrentProjectRisks(),
       state.simulation.iterations
     );
 
