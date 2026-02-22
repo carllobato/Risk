@@ -1,6 +1,7 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
 const THEME_KEY = "risk-mvp-theme";
-const APP_VERSION = "v1.3.0 (2026-02-21 10:15 UTC)";
+const APP_VERSION = "v1.4.0 (2026-02-22 12:10 UTC)";
+const PORTFOLIO_ITEMS = ["Portfolio Overview", "Portfolio Risk"];
 const NAV_ITEMS = ["Dashboard", "Risk Register", "Analysis"];
 const SETTINGS_PAGE = "Settings";
 
@@ -34,6 +35,16 @@ const defaultData = {
     days_calibration_high: 30,
     updated_at: new Date().toISOString()
   },
+  portfolio_projects: [
+    {
+      id: "p-1",
+      name: "Demo Project",
+      client: "Northwind Infrastructure",
+      stage: "Planning",
+      baseline_cost: 12000000,
+      updated_at: new Date().toISOString()
+    }
+  ],
   risks: [
     {
       id: crypto.randomUUID(),
@@ -237,11 +248,38 @@ function ensureRiskCodes(data) {
   return data;
 }
 
+function ensurePortfolioProjects(data) {
+  const existing = Array.isArray(data.portfolio_projects) ? data.portfolio_projects : [];
+  const byId = new Map(
+    existing
+      .filter((project) => project && project.id)
+      .map((project) => [project.id, { ...project }])
+  );
+
+  const current = data.project || {};
+  byId.set(current.id, {
+    id: current.id,
+    name: current.name || "Unnamed Project",
+    client: current.client || "",
+    stage: current.project_stage || "Planning",
+    baseline_cost: Number(current.baseline_cost || 0),
+    updated_at: current.updated_at || new Date().toISOString()
+  });
+
+  return Array.from(byId.values()).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+}
+
+function syncCurrentProjectToPortfolio() {
+  state.data.portfolio_projects = ensurePortfolioProjects(state.data);
+}
+
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
-    return ensureRiskCodes(structuredClone(defaultData));
+    const seeded = ensureRiskCodes(structuredClone(defaultData));
+    seeded.portfolio_projects = ensurePortfolioProjects(seeded);
+    return seeded;
   }
 
   try {
@@ -298,15 +336,19 @@ function loadData() {
     if (typeof parsed.project.days_calibration_high !== "number") {
       parsed.project.days_calibration_high = 30;
     }
+    parsed.portfolio_projects = ensurePortfolioProjects(parsed);
     return ensureRiskCodes(parsed);
   } catch {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
-    return ensureRiskCodes(structuredClone(defaultData));
+    const fallback = ensureRiskCodes(structuredClone(defaultData));
+    fallback.portfolio_projects = ensurePortfolioProjects(fallback);
+    return fallback;
   }
 }
 
 function saveData() {
   state.data.project.updated_at = new Date().toISOString();
+  syncCurrentProjectToPortfolio();
   state.simulation.result = null;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   render();
@@ -603,16 +645,27 @@ function ensureSimulationResult() {
 
 function renderNav() {
   navMenu.innerHTML = "";
-  NAV_ITEMS.forEach((item) => {
-    const btn = document.createElement("button");
-    btn.className = `nav-item ${state.page === item ? "active" : ""}`;
-    btn.textContent = item;
-    btn.onclick = () => {
-      state.page = item;
-      render();
-    };
-    navMenu.appendChild(btn);
-  });
+
+  const addSection = (title, items) => {
+    const heading = document.createElement("div");
+    heading.className = "nav-section-title";
+    heading.textContent = title;
+    navMenu.appendChild(heading);
+
+    items.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.className = `nav-item ${state.page === item ? "active" : ""}`;
+      btn.textContent = item;
+      btn.onclick = () => {
+        state.page = item;
+        render();
+      };
+      navMenu.appendChild(btn);
+    });
+  };
+
+  addSection("Portfolio", PORTFOLIO_ITEMS);
+  addSection("Project", NAV_ITEMS);
 }
 
 function makeCard(label, value) {
@@ -1002,6 +1055,152 @@ function renderDistributionLineChart(title, values, options = {}) {
   }
 
   return card;
+}
+
+function getPortfolioProjectRiskRows() {
+  const currentProjectId = state.data.project.id;
+  const metrics = calcMetrics();
+
+  return (state.data.portfolio_projects || []).map((project) => {
+    if (project.id === currentProjectId) {
+      const projectRisks = state.data.risks.filter((risk) => risk.project_id === currentProjectId);
+      const open = projectRisks.filter((risk) => risk.status === "Open").length;
+      const mitigating = projectRisks.filter((risk) => risk.status === "Mitigating").length;
+      const closed = projectRisks.filter((risk) => risk.status === "Closed").length;
+      return {
+        ...project,
+        riskCount: projectRisks.length,
+        open,
+        mitigating,
+        closed,
+        expectedCost: metrics.expectedCost,
+        expectedSchedule: metrics.expectedDays,
+        linked: true
+      };
+    }
+
+    return {
+      ...project,
+      riskCount: 0,
+      open: 0,
+      mitigating: 0,
+      closed: 0,
+      expectedCost: 0,
+      expectedSchedule: 0,
+      linked: false
+    };
+  });
+}
+
+function renderPortfolioOverview() {
+  const section = document.createElement("section");
+  section.className = "card";
+
+  const tiles = (state.data.portfolio_projects || [])
+    .map(
+      (project) => `
+      <article class="portfolio-tile card">
+        <div class="tile-label">${project.client || "Client not set"}</div>
+        <div class="tile-value">${project.name || "Unnamed Project"}</div>
+        <div class="tile-label">Stage: ${project.stage || "Planning"}</div>
+        <div class="tile-label">Value: ${fmtNumber(project.baseline_cost || 0, true)}</div>
+      </article>
+    `
+    )
+    .join("");
+
+  section.innerHTML = `
+    <div class="actions">
+      <h3 style="margin-right:auto;">Portfolio Overview</h3>
+    </div>
+    <div class="portfolio-grid">
+      ${tiles}
+      <button type="button" id="add-portfolio-project" class="portfolio-add-tile">
+        <span>＋</span>
+        <strong>Add New Project</strong>
+      </button>
+    </div>
+  `;
+
+  section.querySelector("#add-portfolio-project").onclick = () => {
+    const name = prompt("New project name");
+    if (!name) return;
+    const client = prompt("Client", "") || "";
+    const baseline = Number(prompt("Project value", "0") || 0);
+    const stage = prompt("Project stage", "Planning") || "Planning";
+    state.data.portfolio_projects = [
+      ...(state.data.portfolio_projects || []),
+      {
+        id: `p-${Date.now()}`,
+        name: name.trim(),
+        client: client.trim(),
+        stage: stage.trim(),
+        baseline_cost: baseline,
+        updated_at: new Date().toISOString()
+      }
+    ];
+    saveData();
+  };
+
+  pageContent.appendChild(section);
+}
+
+function renderPortfolioRisk() {
+  const rows = getPortfolioProjectRiskRows();
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.projects += 1;
+      acc.risks += row.riskCount;
+      acc.open += row.open;
+      acc.mitigating += row.mitigating;
+      acc.closed += row.closed;
+      acc.cost += row.expectedCost;
+      acc.schedule += row.expectedSchedule;
+      return acc;
+    },
+    { projects: 0, risks: 0, open: 0, mitigating: 0, closed: 0, cost: 0, schedule: 0 }
+  );
+
+  const section = document.createElement("section");
+  section.className = "card";
+  section.innerHTML = `
+    <div class="actions"><h3 style="margin-right:auto;">Portfolio Risk</h3></div>
+    <div class="tiles" style="margin-bottom:1rem;">
+      ${makeCard("Projects", String(totals.projects)).outerHTML}
+      ${makeCard("Risks", String(totals.risks)).outerHTML}
+      ${makeCard("Open / Mitigating / Closed", `${totals.open} / ${totals.mitigating} / ${totals.closed}`).outerHTML}
+      ${makeCard("Expected Cost Exposure", fmtNumber(totals.cost, true)).outerHTML}
+      ${makeCard("Expected Schedule Exposure", `${totals.schedule.toFixed(1)} days`).outerHTML}
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th><th>Client</th><th>Risks</th><th>Open</th><th>Mitigating</th><th>Closed</th><th>Expected Cost</th><th>Expected Schedule</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows
+          .map(
+            (row) => `
+          <tr>
+            <td>${row.name || "-"}</td>
+            <td>${row.client || "-"}</td>
+            <td>${row.riskCount}</td>
+            <td>${row.open}</td>
+            <td>${row.mitigating}</td>
+            <td>${row.closed}</td>
+            <td>${fmtNumber(row.expectedCost, true)}</td>
+            <td>${row.expectedSchedule.toFixed(1)} days</td>
+            <td>${row.linked ? "Linked" : "Summary only"}</td>
+          </tr>
+        `
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+
+  pageContent.appendChild(section);
 }
 
 function renderDashboard() {
@@ -1845,7 +2044,11 @@ function render() {
   renderNav();
   ensureSimulationResult();
 
-  if (state.page === "Dashboard") {
+  if (state.page === "Portfolio Overview") {
+    renderPortfolioOverview();
+  } else if (state.page === "Portfolio Risk") {
+    renderPortfolioRisk();
+  } else if (state.page === "Dashboard") {
     renderDashboard();
   } else if (state.page === SETTINGS_PAGE) {
     renderSettings();

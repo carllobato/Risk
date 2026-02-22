@@ -92,6 +92,47 @@ body.dark-theme .brand-logo-dark {
   flex: 1;
 }
 
+
+.nav-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.55rem 0 0.1rem;
+  padding: 0 0.25rem;
+}
+
+.portfolio-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.portfolio-tile {
+  min-height: 130px;
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+}
+
+.portfolio-add-tile {
+  min-height: 130px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 78%, var(--primary-soft));
+  color: var(--text);
+  display: grid;
+  place-content: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.portfolio-add-tile span {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
 .nav-item {
   text-align: left;
   border: 1px solid transparent;
