@@ -243,9 +243,17 @@ body.dark-theme .brand-logo-dark {
 }
 
 #last-updated {
+  position: fixed;
+  right: 14px;
+  bottom: 38px;
   margin: 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.76rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  z-index: 30;
 }
 
 
@@ -915,3 +923,18 @@ body.dark-theme .tornado-bar-high {
     filter: blur(0);
   }
 }
+
+
+.chart-project-position {
+  stroke-width: 2;
+  fill: currentColor;
+}
+
+.chart-project-position-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.chart-project-position.rag-green { fill: #31b66c; }
+.chart-project-position.rag-amber { fill: #f0a43c; }
+.chart-project-position.rag-red { fill: #dc5a5a; }

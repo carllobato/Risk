@@ -23,6 +23,7 @@ const defaultData = {
     id: "p-1",
     name: "Demo Project",
     client: "Northwind Infrastructure",
+    portfolio_name: "Portfolio",
     project_number: "GSQ-001",
     location: "Sydney",
     currency: "USD",
@@ -299,6 +300,9 @@ function loadData() {
     const parsed = JSON.parse(raw);
     if (!parsed.project.units) {
       parsed.project.units = "Days";
+    }
+    if (!parsed.project.portfolio_name) {
+      parsed.project.portfolio_name = "Portfolio";
     }
     if (!parsed.project.project_number) {
       parsed.project.project_number = "GSQ-001";
@@ -1047,6 +1051,17 @@ function renderDistributionLineChart(title, values, options = {}) {
     bandElement = `<rect x="${bandX.toFixed(1)}" y="${padY}" width="${bandW.toFixed(1)}" height="${(height - padY * 2).toFixed(1)}" class="chart-gap-fill ${ragClass}" />`;
   }
 
+  let projectMarkerElement = "";
+  if (typeof options.projectPercentile === "number") {
+    const clamped = Math.max(0, Math.min(100, options.projectPercentile));
+    const xValue = getPercentileValue(sortedValues, clamped);
+    const yValue = interpolateDensity(points, xValue);
+    const x = xToSvg(xValue);
+    const y = yToSvg(yValue);
+    const markerClass = options.projectLineClass || "chart-project-line";
+    projectMarkerElement = `<g><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" class="chart-project-position ${markerClass}" /><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="11" class="chart-project-position-hit" data-tooltip="Current position: P${clamped.toFixed(0)} (${formatter(xValue)})" /></g>`;
+  }
+
   const referenceLineElements = referenceLines
     .filter((line) => typeof line.percentile === "number")
     .map((line) => {
@@ -1080,6 +1095,7 @@ function renderDistributionLineChart(title, values, options = {}) {
       <path d="${linePath}" class="chart-line" />
       <path d="${linePath}" class="chart-line-hit" data-tooltip="${title} curve" />
       ${referenceLineElements}
+      ${projectMarkerElement}
       ${markerElements}
       <text x="${padX}" y="${height - 2}" class="chart-tick">${formatter(xMin)}</text>
       <text x="${width - padX}" y="${height - 2}" text-anchor="end" class="chart-tick">${formatter(xMax)}</text>
@@ -1518,6 +1534,23 @@ function renderSettings() {
   wrapper.className = "settings-list";
   const isDark = document.body.classList.contains("dark-theme");
 
+  const projectRows = (state.data.portfolio_projects || [])
+    .map(
+      (project) => `
+      <tr>
+        <td>${project.name || "-"}</td>
+        <td>${project.project_stage || "Feasibility"}</td>
+        <td>${fmtNumber(project.baseline_cost || 0, true)}</td>
+        <td>
+          <button type="button" class="secondary delete-portfolio-project" data-project-id="${project.id}" ${project.id === state.data.project.id ? "disabled" : ""}>
+            ${project.id === state.data.project.id ? "Active" : "Delete"}
+          </button>
+        </td>
+      </tr>
+    `
+    )
+    .join("");
+
   wrapper.innerHTML = `
     <section class="card settings-section">
       <h3>General Settings</h3>
@@ -1570,6 +1603,22 @@ function renderSettings() {
     </section>
 
     <section class="card settings-section">
+      <h3>Portfolio Settings</h3>
+      <form id="portfolio-settings-form" class="settings-list-form">
+        <div class="setting-row">
+          <label for="settings-portfolio-name">Portfolio Name</label>
+          <input id="settings-portfolio-name" name="portfolio_name" value="${state.data.project.portfolio_name || "Portfolio"}" required />
+        </div>
+        <div class="actions"><button type="submit">Save Portfolio</button></div>
+      </form>
+      <table>
+        <thead><tr><th>Project</th><th>Stage</th><th>Value</th><th>Access</th></tr></thead>
+        <tbody>${projectRows}</tbody>
+      </table>
+      <p class="tile-label">Project delete is managed here until role-based permissions are added.</p>
+    </section>
+
+    <section class="card settings-section">
       <h3>Project Settings</h3>
       <form id="project-settings-form" class="settings-list-form">
         <div class="setting-row">
@@ -1608,7 +1657,13 @@ function renderSettings() {
           <label for="settings-target-p">Target P Value</label>
           <input id="settings-target-p" name="target_p_value" type="number" min="0" max="100" step="10" value="${state.data.project.target_p_value ?? 80}" required />
         </div>
+        <div class="actions"><button type="submit">Save Project</button></div>
+      </form>
+    </section>
 
+    <section class="card settings-section">
+      <h3>Calibration</h3>
+      <form id="calibration-settings-form" class="settings-list-form">
         <div class="setting-row">
           <label for="settings-cost-cal-low">Cost Calibration Low (%)</label>
           <input id="settings-cost-cal-low" name="cost_calibration_low_pct" type="number" min="0" step="0.1" value="${state.data.project.cost_calibration_low_pct ?? 1}" required />
@@ -1633,7 +1688,8 @@ function renderSettings() {
           <label for="settings-days-cal-high">Time Calibration High (days)</label>
           <input id="settings-days-cal-high" name="days_calibration_high" type="number" min="0" step="0.1" value="${state.data.project.days_calibration_high ?? 30}" required />
         </div>
-        <div class="actions"><button type="submit">Save Project</button></div>      </form>
+        <div class="actions"><button type="submit">Save Calibration</button></div>
+      </form>
       <p class="tile-label">Last updated: ${fmtDate(state.data.project.updated_at)}</p>
     </section>
   `;
@@ -1658,10 +1714,31 @@ function renderSettings() {
       chart_label_mode: form.get("chart_label_mode"),
       updated_at: new Date().toISOString()
     };
-    state.simulation.result = null;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
-    render();
+    saveData();
   };
+
+  wrapper.querySelector("#portfolio-settings-form").onsubmit = (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    state.data.project = {
+      ...state.data.project,
+      portfolio_name: form.get("portfolio_name") || "Portfolio",
+      updated_at: new Date().toISOString()
+    };
+    saveData();
+  };
+
+  wrapper.querySelectorAll(".delete-portfolio-project").forEach((button) => {
+    button.onclick = () => {
+      const projectId = button.dataset.projectId;
+      const project = (state.data.portfolio_projects || []).find((item) => item.id === projectId);
+      if (!project || project.id === state.data.project.id) return;
+      if (!confirm(`Delete project '${project.name}' from portfolio? This will also remove its risks.`)) return;
+      state.data.portfolio_projects = (state.data.portfolio_projects || []).filter((item) => item.id !== projectId);
+      state.data.risks = state.data.risks.filter((risk) => risk.project_id !== projectId);
+      saveData();
+    };
+  });
 
   wrapper.querySelector("#project-settings-form").onsubmit = (event) => {
     event.preventDefault();
@@ -1677,6 +1754,16 @@ function renderSettings() {
       completion_date: form.get("completion_date"),
       contingency_days: Number(form.get("contingency_days")),
       target_p_value: Math.round(Number(form.get("target_p_value")) / 10) * 10,
+      updated_at: new Date().toISOString()
+    };
+    saveData();
+  };
+
+  wrapper.querySelector("#calibration-settings-form").onsubmit = (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    state.data.project = {
+      ...state.data.project,
       cost_calibration_low_pct: Number(form.get("cost_calibration_low_pct")),
       cost_calibration_medium_pct: Number(form.get("cost_calibration_medium_pct")),
       cost_calibration_high_pct: Number(form.get("cost_calibration_high_pct")),
@@ -1685,9 +1772,7 @@ function renderSettings() {
       days_calibration_high: Number(form.get("days_calibration_high")),
       updated_at: new Date().toISOString()
     };
-    state.simulation.result = null;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
-    render();
+    saveData();
   };
 
   pageContent.appendChild(wrapper);
@@ -2230,7 +2315,8 @@ function runSimulation() {
 }
 
 function render() {
-  projectTitle.textContent = state.data.project.name;
+  const portfolioTitle = state.data.project.portfolio_name || state.data.project.client || "Portfolio";
+  projectTitle.textContent = `${portfolioTitle} - ${state.data.project.name}`;
   versionBadge.textContent = APP_VERSION;
   lastUpdated.textContent = `Project updated: ${fmtDate(state.data.project.updated_at)}`;
   pageContent.innerHTML = "";
