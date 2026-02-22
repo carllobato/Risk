@@ -957,6 +957,19 @@ function renderDashboard() {
   const contingencyDaysPValue = calcScheduleContingencyPValueFromResults(simulation?.scheduleResults);
   const targetPValue = Math.max(0, Math.min(100, Number(state.data.project.target_p_value || 0)));
 
+  const sortedCostResults = (simulation?.costResults || []).slice().sort((a, b) => a - b);
+  const sortedScheduleResults = (simulation?.scheduleResults || []).slice().sort((a, b) => a - b);
+  const targetCostValue = calcTargetValue(sortedCostResults, targetPValue);
+  const targetScheduleValue = calcTargetValue(sortedScheduleResults, targetPValue);
+  const commercialDeltaValue = Number(state.data.project.contingency || 0) - targetCostValue;
+  const scheduleDeltaValue = Number(state.data.project.contingency_days || 0) - targetScheduleValue;
+  const p40Cost = calcTargetValue(sortedCostResults, 40);
+  const p70Cost = calcTargetValue(sortedCostResults, 70);
+  const p90Cost = calcTargetValue(sortedCostResults, 90);
+  const p40Schedule = calcTargetValue(sortedScheduleResults, 40);
+  const p70Schedule = calcTargetValue(sortedScheduleResults, 70);
+  const p90Schedule = calcTargetValue(sortedScheduleResults, 90);
+
   const topCostTornado = buildTopRiskTornadoEntries(simulation, "cost", 5);
   const topScheduleTornado = buildTopRiskTornadoEntries(simulation, "schedule", 5);
 
@@ -985,15 +998,15 @@ function renderDashboard() {
   );
 
   const commercialTiles = makeTileGroup("Commercial", [
-    makeCard("P50 Cost", fmtNumber(simulation?.costStats?.p50 || 0, true)),
-    makeCard("P80 Cost", fmtNumber(simulation?.costStats?.p80 || 0, true)),
-    makeCard("P90 Cost", fmtNumber(simulation?.costStats?.p90 || 0, true))
+    makeCard("Current P Value", formatPValueWithRag(contingencyPValue, targetPValue)),
+    makeCard("Delta to Target", formatDeltaPair(commercialDeltaValue)),
+    makeCard("P40 / P70 / P90", `${fmtNumber(p40Cost, true)} / ${fmtNumber(p70Cost, true)} / ${fmtNumber(p90Cost, true)}`)
   ]);
 
   const scheduleTiles = makeTileGroup("Schedule", [
-    makeCard("P50 Schedule (days)", Number(simulation?.scheduleStats?.p50 || 0).toFixed(1)),
-    makeCard("P80 Schedule (days)", Number(simulation?.scheduleStats?.p80 || 0).toFixed(1)),
-    makeCard("P90 Schedule (days)", Number(simulation?.scheduleStats?.p90 || 0).toFixed(1))
+    makeCard("Current P Value", formatPValueWithRag(contingencyDaysPValue, targetPValue)),
+    makeCard("Delta to Target", formatDeltaPair(scheduleDeltaValue, "days")),
+    makeCard("P40 / P70 / P90", `${p40Schedule.toFixed(1)}d / ${p70Schedule.toFixed(1)}d / ${p90Schedule.toFixed(1)}d`)
   ]);
 
   const dashboardLayout = document.createElement("div");
