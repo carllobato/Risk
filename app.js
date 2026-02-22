@@ -1,7 +1,7 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
 const THEME_KEY = "risk-mvp-theme";
 const APP_VERSION = "v1.3.0 (2026-02-21 10:15 UTC)";
-const NAV_ITEMS = ["Dashboard", "Risk Register", "Outputs"];
+const NAV_ITEMS = ["Dashboard", "Risk Register", "Analysis"];
 const SETTINGS_PAGE = "Settings";
 
 const categories = ["Cost", "Schedule", "Commercial", "Scope", "Delivery"];
@@ -26,6 +26,12 @@ const defaultData = {
     date_format: "DD/MM/YYYY",
     chart_label_mode: "hover",
     project_stage: "Planning",
+    cost_calibration_low_pct: 1,
+    cost_calibration_medium_pct: 3,
+    cost_calibration_high_pct: 6,
+    days_calibration_low: 5,
+    days_calibration_medium: 15,
+    days_calibration_high: 30,
     updated_at: new Date().toISOString()
   },
   risks: [
@@ -273,6 +279,24 @@ function loadData() {
     }
     if (!parsed.project.project_stage) {
       parsed.project.project_stage = "Planning";
+    }
+    if (typeof parsed.project.cost_calibration_low_pct !== "number") {
+      parsed.project.cost_calibration_low_pct = 1;
+    }
+    if (typeof parsed.project.cost_calibration_medium_pct !== "number") {
+      parsed.project.cost_calibration_medium_pct = 3;
+    }
+    if (typeof parsed.project.cost_calibration_high_pct !== "number") {
+      parsed.project.cost_calibration_high_pct = 6;
+    }
+    if (typeof parsed.project.days_calibration_low !== "number") {
+      parsed.project.days_calibration_low = 5;
+    }
+    if (typeof parsed.project.days_calibration_medium !== "number") {
+      parsed.project.days_calibration_medium = 15;
+    }
+    if (typeof parsed.project.days_calibration_high !== "number") {
+      parsed.project.days_calibration_high = 30;
     }
     return ensureRiskCodes(parsed);
   } catch {
@@ -1191,8 +1215,32 @@ function renderSettings() {
           <label for="settings-target-p">Target P Value</label>
           <input id="settings-target-p" name="target_p_value" type="number" min="0" max="100" step="10" value="${state.data.project.target_p_value ?? 80}" required />
         </div>
-        <div class="actions"><button type="submit">Save Project</button></div>
-      </form>
+
+        <div class="setting-row">
+          <label for="settings-cost-cal-low">Cost Calibration Low (%)</label>
+          <input id="settings-cost-cal-low" name="cost_calibration_low_pct" type="number" min="0" step="0.1" value="${state.data.project.cost_calibration_low_pct ?? 1}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-cost-cal-medium">Cost Calibration Medium (%)</label>
+          <input id="settings-cost-cal-medium" name="cost_calibration_medium_pct" type="number" min="0" step="0.1" value="${state.data.project.cost_calibration_medium_pct ?? 3}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-cost-cal-high">Cost Calibration High (%)</label>
+          <input id="settings-cost-cal-high" name="cost_calibration_high_pct" type="number" min="0" step="0.1" value="${state.data.project.cost_calibration_high_pct ?? 6}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-days-cal-low">Time Calibration Low (days)</label>
+          <input id="settings-days-cal-low" name="days_calibration_low" type="number" min="0" step="0.1" value="${state.data.project.days_calibration_low ?? 5}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-days-cal-medium">Time Calibration Medium (days)</label>
+          <input id="settings-days-cal-medium" name="days_calibration_medium" type="number" min="0" step="0.1" value="${state.data.project.days_calibration_medium ?? 15}" required />
+        </div>
+        <div class="setting-row">
+          <label for="settings-days-cal-high">Time Calibration High (days)</label>
+          <input id="settings-days-cal-high" name="days_calibration_high" type="number" min="0" step="0.1" value="${state.data.project.days_calibration_high ?? 30}" required />
+        </div>
+        <div class="actions"><button type="submit">Save Project</button></div>      </form>
       <p class="tile-label">Last updated: ${fmtDate(state.data.project.updated_at)}</p>
     </section>
   `;
@@ -1237,6 +1285,12 @@ function renderSettings() {
       completion_date: form.get("completion_date"),
       contingency_days: Number(form.get("contingency_days")),
       target_p_value: Math.round(Number(form.get("target_p_value")) / 10) * 10,
+      cost_calibration_low_pct: Number(form.get("cost_calibration_low_pct")),
+      cost_calibration_medium_pct: Number(form.get("cost_calibration_medium_pct")),
+      cost_calibration_high_pct: Number(form.get("cost_calibration_high_pct")),
+      days_calibration_low: Number(form.get("days_calibration_low")),
+      days_calibration_medium: Number(form.get("days_calibration_medium")),
+      days_calibration_high: Number(form.get("days_calibration_high")),
       updated_at: new Date().toISOString()
     };
     state.simulation.result = null;
@@ -1332,7 +1386,7 @@ function renderRiskRegister() {
     </div>
     <div class="actions" style="margin-top:0.5rem; flex-wrap:wrap;">
       <input id="risk-filter-text" placeholder="Search risks (2+ chars)..." value="${state.riskRegister.filterText}" style="max-width:260px;" />
-      <button id="toggle-risk-filters" class="secondary" title="Filters" aria-label="Filters">⏷ Filter</button>
+      <button id="toggle-risk-filters" class="secondary" title="Filters" aria-label="Filters">⏷</button>
     </div>
     <div id="risk-filter-panel" class="${state.riskRegister.showFilters ? '' : 'hidden'}" style="margin-top:0.5rem;">
       <div class="actions" style="flex-wrap:wrap;">
@@ -1364,8 +1418,6 @@ function renderRiskRegister() {
         <th data-sort="probability">Probability${sortArrow("probability")}</th>
         <th data-sort="impact_cost_mid">Cost Mid${sortArrow("impact_cost_mid")}</th>
         <th data-sort="impact_days_mid">Days Mid${sortArrow("impact_days_mid")}</th>
-        <th data-sort="updated_at">Updated${sortArrow("updated_at")}</th>
-        <th data-sort="last_saved_at">Last Saved${sortArrow("last_saved_at")}</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -1382,8 +1434,6 @@ function renderRiskRegister() {
           <td>${Number(risk.probability || 0).toFixed(2)}</td>
           <td>${fmtNumber(risk.impact_cost_mid, true)}</td>
           <td>${risk.impact_days_mid}</td>
-          <td>${fmtDate(risk.updated_at)}</td>
-          <td>${fmtDate(risk.last_saved_at || risk.updated_at)}</td>
           <td><button class="secondary delete-risk" data-id="${risk.id}">Delete</button></td>
         </tr>
       `
@@ -1445,9 +1495,59 @@ function renderRiskRegister() {
   pageContent.appendChild(section);
 }
 
+function applyCalibrationProfileToRiskForm(profile) {
+  if (!profile) {
+    return;
+  }
+
+  const project = state.data.project;
+  const costPct = profile === "low"
+    ? Number(project.cost_calibration_low_pct || 0)
+    : profile === "medium"
+      ? Number(project.cost_calibration_medium_pct || 0)
+      : Number(project.cost_calibration_high_pct || 0);
+
+  const daysMid = profile === "low"
+    ? Number(project.days_calibration_low || 0)
+    : profile === "medium"
+      ? Number(project.days_calibration_medium || 0)
+      : Number(project.days_calibration_high || 0);
+
+  const costMid = (Number(project.baseline_cost || 0) * costPct) / 100;
+  const costLow = costMid * 0.6;
+  const costHigh = costMid * 1.4;
+  const daysLow = daysMid * 0.6;
+  const daysHigh = daysMid * 1.4;
+
+  const setValue = (name, value) => {
+    const input = riskForm.querySelector(`[name="${name}"]`);
+    if (input) {
+      input.value = Math.round(value);
+    }
+  };
+
+  setValue("impact_cost_low", costLow);
+  setValue("impact_cost_mid", costMid);
+  setValue("impact_cost_high", costHigh);
+  setValue("impact_days_low", daysLow);
+  setValue("impact_days_mid", daysMid);
+  setValue("impact_days_high", daysHigh);
+}
+
 function buildRiskForm(risk, riskId = null) {
   riskForm.innerHTML = `
     <div class="form-grid">
+      <label>Risk ID <input value="${risk.risk_code || "(auto on save)"}" disabled /></label>
+      <label>Updated <input value="${risk.updated_at ? fmtDate(risk.updated_at) : "N/A"}" disabled /></label>
+      <label>Last Saved <input value="${risk.last_saved_at ? fmtDate(risk.last_saved_at) : "N/A"}" disabled /></label>
+      <label>Calibration
+        <select id="risk-calibration-profile">
+          <option value="">Manual</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
       <label>Title <input name="title" required value="${risk.title || ""}" /></label>
       <label>Category
         <select name="category">${categories
@@ -1489,6 +1589,9 @@ function buildRiskForm(risk, riskId = null) {
     const safe = Math.max(0, Math.min(1, Number(number.value || 0)));
     slider.value = safe;
   };
+
+  const calibrationSelect = riskForm.querySelector("#risk-calibration-profile");
+  calibrationSelect.onchange = () => applyCalibrationProfileToRiskForm(calibrationSelect.value);
 
   riskForm.querySelector("#cancel-risk").onclick = closeRiskModal;
   const nextBtn = riskForm.querySelector("#next-risk");
@@ -1556,7 +1659,7 @@ function renderOutputs() {
   controls.className = "card";
   controls.innerHTML = `
     <div class="actions">
-      <h3 style="margin-right:auto;">Simulation Outputs</h3>
+      <h3 style="margin-right:auto;">Simulation Analysis</h3>
       <button id="run-simulation">Run Simulation</button>
     </div>
   `;
@@ -1748,7 +1851,7 @@ function render() {
     renderSettings();
   } else if (state.page === "Risk Register") {
     renderRiskRegister();
-  } else if (state.page === "Outputs") {
+  } else if (state.page === "Analysis") {
     renderOutputs();
   }
 }
