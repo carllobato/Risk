@@ -25,6 +25,7 @@ const defaultData = {
     currency_decimals: 2,
     date_format: "DD/MM/YYYY",
     chart_label_mode: "hover",
+    project_stage: "Planning",
     updated_at: new Date().toISOString()
   },
   risks: [
@@ -231,6 +232,9 @@ function loadData() {
     }
     if (!parsed.project.chart_label_mode) {
       parsed.project.chart_label_mode = "hover";
+    }
+    if (!parsed.project.project_stage) {
+      parsed.project.project_stage = "Planning";
     }
     return parsed;
   } catch {
@@ -556,13 +560,16 @@ function makeCard(label, value) {
   return el;
 }
 
-function makeTileGroup(title, cards) {
+function makeTileGroup(title, cards, tilesClass = "tiles") {
   const group = document.createElement("section");
   group.className = "tile-group card";
   const heading = document.createElement("h3");
   heading.textContent = title;
   const tiles = document.createElement("div");
-  tiles.className = "tiles";
+  tiles.className = tilesClass;
+  if (tilesClass.includes("tiles-fixed-5")) {
+    group.classList.add("fixed-tiles");
+  }
   tiles.append(...cards);
   group.append(heading, tiles);
   return group;
@@ -853,6 +860,23 @@ function renderDistributionLineChart(title, values, options = {}) {
     referenceLines.push(...options.referenceLines);
   }
 
+  const projectP = Number(options.projectPercentile);
+  const targetP = Number(options.targetPercentile);
+  const hasBand = Number.isFinite(projectP) && Number.isFinite(targetP);
+  let bandElement = "";
+  if (hasBand) {
+    const projectX = xToSvg(getPercentileValue(sortedValues, Math.max(0, Math.min(100, projectP))));
+    const targetX = xToSvg(getPercentileValue(sortedValues, Math.max(0, Math.min(100, targetP))));
+    const bandX = Math.min(projectX, targetX);
+    const bandW = Math.abs(targetX - projectX);
+    const ragClass = (options.projectLineClass || "").includes("rag-red")
+      ? "rag-red"
+      : (options.projectLineClass || "").includes("rag-amber")
+        ? "rag-amber"
+        : "rag-green";
+    bandElement = `<rect x="${bandX.toFixed(1)}" y="${padY}" width="${bandW.toFixed(1)}" height="${(height - padY * 2).toFixed(1)}" class="chart-gap-fill ${ragClass}" />`;
+  }
+
   const referenceLineElements = referenceLines
     .filter((line) => typeof line.percentile === "number")
     .map((line) => {
@@ -882,6 +906,7 @@ function renderDistributionLineChart(title, values, options = {}) {
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="chart-axis" />
       <line x1="${padX}" y1="${padY + usableH / 2}" x2="${width - padX}" y2="${padY + usableH / 2}" class="chart-grid" />
       <path d="${areaPath}" class="chart-area" style="fill:url(#grad-${chartId})" />
+      ${bandElement}
       <path d="${linePath}" class="chart-line" />
       <path d="${linePath}" class="chart-line-hit" data-tooltip="${title} curve" />
       ${referenceLineElements}
@@ -921,42 +946,43 @@ function renderDashboard() {
   ensureSimulationResult();
   const simulation = getDisplaySimulationResult() || state.simulation.result;
   const metrics = calcMetrics();
+  const totalRisks = state.data.risks.length;
+  const openCount = state.data.risks.filter((risk) => risk.status === "Open").length;
+  const mitigatingCount = state.data.risks.filter((risk) => risk.status === "Mitigating").length;
+  const closedCount = state.data.risks.filter((risk) => risk.status === "Closed").length;
+  const riskValueIdentified = state.data.risks.reduce((sum, risk) => sum + Number(risk.impact_cost_mid || 0), 0);
+  const scheduleRiskIdentified = state.data.risks.reduce((sum, risk) => sum + Number(risk.impact_days_mid || 0), 0);
+
   const contingencyPValue = calcContingencyPValueFromResults(simulation?.costResults);
   const contingencyDaysPValue = calcScheduleContingencyPValueFromResults(simulation?.scheduleResults);
   const targetPValue = Math.max(0, Math.min(100, Number(state.data.project.target_p_value || 0)));
 
-  const sortedCostResults = (simulation?.costResults || []).slice().sort((a, b) => a - b);
-  const sortedScheduleResults = (simulation?.scheduleResults || []).slice().sort((a, b) => a - b);
-  const targetCostValue = calcTargetValue(sortedCostResults, targetPValue);
-  const targetScheduleValue = calcTargetValue(sortedScheduleResults, targetPValue);
-  const commercialDeltaValue = Number(state.data.project.contingency || 0) - targetCostValue;
-  const scheduleDeltaValue = Number(state.data.project.contingency_days || 0) - targetScheduleValue;
-
   const topCostTornado = buildTopRiskTornadoEntries(simulation, "cost", 5);
   const topScheduleTornado = buildTopRiskTornadoEntries(simulation, "schedule", 5);
 
-  const projectTiles = makeTileGroup("Project Details", [
-    makeCard("Client", state.data.project.client || "N/A"),
-    makeCard("Project Number", state.data.project.project_number || "N/A"),
-    makeCard("Project Name", state.data.project.name || "N/A"),
-    makeCard("Location", state.data.project.location || "N/A"),
-    makeCard("Project Value", fmtNumber(state.data.project.baseline_cost, true)),
-    makeCard("Commercial Contingency", fmtNumber(state.data.project.contingency, true)),
-    makeCard("Completion Date", formatDateOnly(state.data.project.completion_date)),
-    makeCard("Schedule Contingency", `${Number(state.data.project.contingency_days || 0).toFixed(1)} days`),
-    makeCard("Target P Value", `P${targetPValue.toFixed(0)}`)
-  ]);
+  const projectTiles = makeTileGroup(
+    "Project Details",
+    [
+      makeCard("Project Name", state.data.project.name || "N/A"),
+      makeCard("Client", state.data.project.client || "N/A"),
+      makeCard("Project Stage", state.data.project.project_stage || "Planning"),
+      makeCard("Project Value", fmtNumber(state.data.project.baseline_cost, true)),
+      makeCard("Completion Date", formatDateOnly(state.data.project.completion_date))
+    ],
+    "tiles tiles-fixed-5"
+  );
 
-  const simulationTiles = makeTileGroup("Simulation Results", [
-    makeCard("Current Commercial P-value", formatPValueWithRag(contingencyPValue, targetPValue)),
-    makeCard("Commercial Delta to Target", formatDeltaPair(commercialDeltaValue)),
-    makeCard("Current Schedule P-value", formatPValueWithRag(contingencyDaysPValue, targetPValue)),
-    makeCard("Schedule Delta to Target", formatDeltaPair(scheduleDeltaValue, "days")),
-    makeCard("Open Risks", String(metrics.openCount)),
-    makeCard("Expected Cost Exposure", fmtNumber(metrics.expectedCost, true)),
-    makeCard("Expected Schedule Exposure", `${metrics.expectedDays.toFixed(1)} ${state.data.project.units.toLowerCase()}`),
-    makeCard("Target Completion", calcTargetCompletionDateFromResults(simulation?.scheduleResults))
-  ]);
+  const riskAnalysisTiles = makeTileGroup(
+    "Risk Analysis",
+    [
+      makeCard("Risks Identified", String(totalRisks)),
+      makeCard("Value of Risks Identified", fmtNumber(riskValueIdentified, true)),
+      makeCard("Schedule Risk Identified", `${scheduleRiskIdentified.toFixed(1)} days`),
+      makeCard("Risk Status (O/M/C)", `${openCount} / ${mitigatingCount} / ${closedCount}`),
+      makeCard("Expected Cost Exposure", fmtNumber(metrics.expectedCost, true))
+    ],
+    "tiles tiles-fixed-5"
+  );
 
   const commercialTiles = makeTileGroup("Commercial", [
     makeCard("P50 Cost", fmtNumber(simulation?.costStats?.p50 || 0, true)),
@@ -973,7 +999,7 @@ function renderDashboard() {
   const dashboardLayout = document.createElement("div");
   dashboardLayout.className = "grid-2 outputs-layout";
   projectTiles.classList.add("output-project-full");
-  simulationTiles.classList.add("output-project-full");
+  riskAnalysisTiles.classList.add("output-project-full");
 
   const commercialRag = getRagStatus(contingencyPValue?.percentile, targetPValue);
   const scheduleRag = getRagStatus(contingencyDaysPValue?.percentile, targetPValue);
@@ -1010,7 +1036,7 @@ function renderDashboard() {
     renderTornadoChart("Top 5 Schedule Risks (Tornado)", topScheduleTornado, (value) => `${value.toFixed(1)}d`, "schedule impact")
   );
 
-  dashboardLayout.append(projectTiles, simulationTiles, commercialColumn, scheduleColumn);
+  dashboardLayout.append(projectTiles, riskAnalysisTiles, commercialColumn, scheduleColumn);
   pageContent.append(dashboardLayout);
 }
 
@@ -1091,6 +1117,10 @@ function renderSettings() {
           <input id="settings-location" name="location" value="${state.data.project.location || ""}" />
         </div>
         <div class="setting-row">
+          <label for="settings-project-stage">Project Stage</label>
+          <input id="settings-project-stage" name="project_stage" value="${state.data.project.project_stage || "Planning"}" />
+        </div>
+        <div class="setting-row">
           <label for="settings-project-value">Project Value</label>
           <input id="settings-project-value" name="baseline_cost" type="number" min="0" step="1" value="${state.data.project.baseline_cost}" required />
         </div>
@@ -1150,6 +1180,7 @@ function renderSettings() {
       client: form.get("client"),
       project_number: form.get("project_number"),
       location: form.get("location"),
+      project_stage: form.get("project_stage"),
       baseline_cost: Number(form.get("baseline_cost")),
       contingency: Number(form.get("contingency")),
       completion_date: form.get("completion_date"),

@@ -231,6 +231,16 @@ body.dark-theme .brand-logo-dark {
   row-gap: 1.25rem;
 }
 
+
+.tile-group.fixed-tiles {
+  overflow-x: auto;
+}
+
+.tiles-fixed-5 {
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  min-width: 780px;
+}
+
 .tiles .card {
   text-align: center;
 }
@@ -389,6 +399,22 @@ body.dark-theme .brand-logo-dark {
   stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.chart-gap-fill {
+  pointer-events: none;
+}
+
+.chart-gap-fill.rag-green {
+  fill: rgba(22, 163, 74, 0.16);
+}
+
+.chart-gap-fill.rag-amber {
+  fill: rgba(245, 158, 11, 0.16);
+}
+
+.chart-gap-fill.rag-red {
+  fill: rgba(220, 38, 38, 0.16);
 }
 
 .chart-area {
