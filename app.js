@@ -1,12 +1,22 @@
 const STORAGE_KEY = "risk-mvp-data-v1";
 const THEME_KEY = "risk-mvp-theme";
-const APP_VERSION = "v1.5.0 (2026-02-22 13:05 UTC)";
+const APP_VERSION = "v1.6.0 (2026-02-22 14:05 UTC)";
 const PORTFOLIO_ITEMS = ["Portfolio Overview", "Portfolio Risk"];
 const NAV_ITEMS = ["Dashboard", "Risk Register", "Analysis"];
 const SETTINGS_PAGE = "Settings";
 
 const categories = ["Cost", "Schedule", "Commercial", "Scope", "Delivery"];
 const statuses = ["Open", "Mitigating", "Closed"];
+
+const projectStages = ["Feasibility", "Design", "Procurement", "Construction", "Handover"];
+const currencyOptions = ["USD", "AUD", "EUR", "GBP", "CAD", "NZD", "SGD"];
+const numberScaleOptions = [
+  { value: "billions", label: "Billions (e.g. $1.20b)", divisor: 1_000_000_000, suffix: "b" },
+  { value: "millions", label: "Millions (e.g. $12.00m)", divisor: 1_000_000, suffix: "m" },
+  { value: "hundred_thousands", label: "Hundred Thousands (e.g. $120.00h)", divisor: 100_000, suffix: "h" },
+  { value: "ten_thousands", label: "Ten Thousands (e.g. $1200.00t)", divisor: 10_000, suffix: "t" },
+  { value: "full", label: "Full Value", divisor: 1, suffix: "" }
+];
 
 const defaultData = {
   project: {
@@ -26,7 +36,7 @@ const defaultData = {
     currency_decimals: 2,
     date_format: "DD/MM/YYYY",
     chart_label_mode: "hover",
-    project_stage: "Planning",
+    project_stage: "Feasibility",
     cost_calibration_low_pct: 1,
     cost_calibration_medium_pct: 3,
     cost_calibration_high_pct: 6,
@@ -40,7 +50,7 @@ const defaultData = {
       id: "p-1",
       name: "Demo Project",
       client: "Northwind Infrastructure",
-      stage: "Planning",
+      project_stage: "Feasibility",
       baseline_cost: 12000000,
       updated_at: new Date().toISOString()
     }
@@ -254,7 +264,7 @@ function ensurePortfolioProjects(data) {
   const byId = new Map(
     existing
       .filter((project) => project && project.id)
-      .map((project) => [project.id, { ...project }])
+      .map((project) => [project.id, { ...project, project_stage: project.project_stage || project.stage || "Feasibility" }])
   );
 
   const current = data.project || {};
@@ -264,7 +274,7 @@ function ensurePortfolioProjects(data) {
     id: current.id,
     name: current.name || "Unnamed Project",
     client: current.client || "",
-    project_stage: current.project_stage || "Planning",
+    project_stage: current.project_stage || "Feasibility",
     baseline_cost: Number(current.baseline_cost || 0),
     updated_at: current.updated_at || new Date().toISOString()
   });
@@ -306,7 +316,7 @@ function loadData() {
       parsed.project.target_p_value = 80;
     }
     parsed.project.target_p_value = Math.max(0, Math.min(100, Math.round(parsed.project.target_p_value / 10) * 10));
-    if (!parsed.project.number_scale) {
+    if (!parsed.project.number_scale || !numberScaleOptions.some((option) => option.value === parsed.project.number_scale)) {
       parsed.project.number_scale = "millions";
     }
     if (typeof parsed.project.currency_decimals !== "number") {
@@ -319,7 +329,7 @@ function loadData() {
       parsed.project.chart_label_mode = "hover";
     }
     if (!parsed.project.project_stage) {
-      parsed.project.project_stage = "Planning";
+      parsed.project.project_stage = "Feasibility";
     }
     if (typeof parsed.project.cost_calibration_low_pct !== "number") {
       parsed.project.cost_calibration_low_pct = 1;
@@ -356,6 +366,7 @@ function saveData() {
   state.simulation.result = null;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   render();
+  animateProjectLoad();
 }
 
 function fmtNumber(value, currency = false) {
@@ -363,9 +374,10 @@ function fmtNumber(value, currency = false) {
     const amount = Number(value || 0);
     const decimals = Math.max(0, Math.min(4, Number(state.data.project.currency_decimals ?? 2)));
     const scale = state.data.project.number_scale || "millions";
+    const selectedScale = numberScaleOptions.find((option) => option.value === scale) || numberScaleOptions[1];
 
-    if (scale === "millions") {
-      const scaled = amount / 1_000_000;
+    if (selectedScale.value !== "full") {
+      const scaled = amount / selectedScale.divisor;
       const symbol =
         new Intl.NumberFormat(undefined, {
           style: "currency",
@@ -376,7 +388,7 @@ function fmtNumber(value, currency = false) {
         })
           .formatToParts(0)
           .find((part) => part.type === "currency")?.value || "$";
-      return `${symbol}${scaled.toFixed(decimals)}m`;
+      return `${symbol}${scaled.toFixed(decimals)}${selectedScale.suffix}`;
     }
 
     return new Intl.NumberFormat(undefined, {
@@ -392,6 +404,20 @@ function fmtNumber(value, currency = false) {
 
 function fmtDate(iso) {
   return new Date(iso).toLocaleString();
+}
+
+function formatCommas(value) {
+  const numeric = String(value ?? "").replace(/[^0-9.-]/g, "");
+  if (!numeric || numeric === "-" || numeric === ".") return "";
+  const parsed = Number(numeric);
+  if (!Number.isFinite(parsed)) return "";
+  return new Intl.NumberFormat().format(parsed);
+}
+
+function parseCommaNumber(value) {
+  const cleaned = String(value ?? "").replace(/,/g, "").trim();
+  const parsed = Number(cleaned || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function getActiveRisks() {
@@ -652,6 +678,13 @@ function getCurrentProjectRisks() {
   return state.data.risks.filter((risk) => risk.project_id === state.data.project.id);
 }
 
+function animateProjectLoad() {
+  pageContent.classList.remove("project-switch-anim");
+  void pageContent.offsetWidth;
+  pageContent.classList.add("project-switch-anim");
+  setTimeout(() => pageContent.classList.remove("project-switch-anim"), 2000);
+}
+
 function setActiveProject(projectId) {
   const project = (state.data.portfolio_projects || []).find((item) => item.id === projectId);
   if (!project) return;
@@ -660,6 +693,7 @@ function setActiveProject(projectId) {
   state.page = "Dashboard";
   state.simulation.result = null;
   render();
+  animateProjectLoad();
 }
 
 function renderNav() {
@@ -1123,7 +1157,7 @@ function renderPortfolioOverview() {
       <button type="button" class="portfolio-tile card" data-project-id="${project.id}">
         <div class="tile-label">${project.client || "Client not set"}</div>
         <div class="tile-value">${project.name || "Unnamed Project"}</div>
-        <div class="tile-label">Stage: ${project.project_stage || "Planning"}</div>
+        <div class="tile-label">Stage: ${project.project_stage || "Feasibility"}</div>
         <div class="tile-label">Value: ${fmtNumber(project.baseline_cost || 0, true)}</div>
       </button>
     `
@@ -1157,57 +1191,77 @@ function renderPortfolioOverview() {
 function openNewProjectWizard() {
   const defaults = {
     name: "",
-    client: "",
     project_number: "",
     location: "",
-    project_stage: "Planning",
+    project_stage: "Feasibility",
     currency: state.data.project.currency || "USD",
     units: state.data.project.units || "Days",
     number_scale: state.data.project.number_scale || "millions",
     currency_decimals: state.data.project.currency_decimals ?? 2,
     date_format: state.data.project.date_format || "DD/MM/YYYY",
     chart_label_mode: state.data.project.chart_label_mode || "hover",
-    baseline_cost: 0,
-    contingency: 0,
+    baseline_cost: Number(state.data.project.baseline_cost || 0),
+    contingency: Number(state.data.project.contingency || 0),
     completion_date: state.data.project.completion_date || "",
-    contingency_days: 20,
-    target_p_value: 80,
-    collaboration_lead: "",
-    collaboration_email: ""
+    contingency_days: Number(state.data.project.contingency_days || 20),
+    target_p_value: Number(state.data.project.target_p_value || 80),
+    cost_calibration_low_pct: Number(state.data.project.cost_calibration_low_pct || 1),
+    cost_calibration_medium_pct: Number(state.data.project.cost_calibration_medium_pct || 3),
+    cost_calibration_high_pct: Number(state.data.project.cost_calibration_high_pct || 6),
+    days_calibration_low: Number(state.data.project.days_calibration_low || 5),
+    days_calibration_medium: Number(state.data.project.days_calibration_medium || 15),
+    days_calibration_high: Number(state.data.project.days_calibration_high || 30)
   };
 
   let step = 1;
   const backdrop = document.createElement("div");
   backdrop.className = "wizard-backdrop";
 
+  const renderStageOptions = (selected) =>
+    projectStages.map((stage) => `<option value="${stage}" ${selected === stage ? "selected" : ""}>${stage}</option>`).join("");
+
+  const renderCurrencyOptions = (selected) =>
+    currencyOptions.map((currency) => `<option value="${currency}" ${selected === currency ? "selected" : ""}>${currency}</option>`).join("");
+
+  const renderScaleOptions = (selected) =>
+    numberScaleOptions.map((option) => `<option value="${option.value}" ${selected === option.value ? "selected" : ""}>${option.label}</option>`).join("");
+
+  const renderDecimalOptions = (selected) =>
+    [0, 1, 2, 3, 4].map((decimal) => `<option value="${decimal}" ${Number(selected) === decimal ? "selected" : ""}>${decimal}</option>`).join("");
+
+  const costValuePreview = (pct) => fmtNumber((Number(defaults.baseline_cost || 0) * Number(pct || 0)) / 100, true);
+
   const renderStep = () => {
-    const stepTitle = step === 1 ? "General Settings" : step === 2 ? "Project Settings" : "Collaboration";
+    const stepTitle = step === 1 ? "General Settings" : step === 2 ? "Project Settings" : "Calibration";
     const stepContent = step === 1
       ? `
-      <label>Currency <input name="currency" value="${defaults.currency}" /></label>
+      <label>Currency <select name="currency">${renderCurrencyOptions(defaults.currency)}</select></label>
       <label>Schedule Units <select name="units"><option value="Days" ${defaults.units === "Days" ? "selected" : ""}>Days</option><option value="Weeks" ${defaults.units === "Weeks" ? "selected" : ""}>Weeks</option></select></label>
-      <label>Rounding/Scale <select name="number_scale"><option value="millions" ${defaults.number_scale === "millions" ? "selected" : ""}>Millions</option><option value="full" ${defaults.number_scale === "full" ? "selected" : ""}>Full</option></select></label>
-      <label>Currency Decimals <input type="number" min="0" max="4" name="currency_decimals" value="${defaults.currency_decimals}" /></label>
+      <label>Rounding/Scale <select name="number_scale">${renderScaleOptions(defaults.number_scale)}</select></label>
+      <label>Currency Decimals <select name="currency_decimals">${renderDecimalOptions(defaults.currency_decimals)}</select></label>
       <label>Date Format <select name="date_format"><option value="DD/MM/YYYY" ${defaults.date_format === "DD/MM/YYYY" ? "selected" : ""}>DD/MM/YYYY</option><option value="MM/DD/YYYY" ${defaults.date_format === "MM/DD/YYYY" ? "selected" : ""}>MM/DD/YYYY</option><option value="YYYY-MM-DD" ${defaults.date_format === "YYYY-MM-DD" ? "selected" : ""}>YYYY-MM-DD</option></select></label>
       <label>Chart Label Mode <select name="chart_label_mode"><option value="hover" ${defaults.chart_label_mode === "hover" ? "selected" : ""}>Hover</option><option value="callout" ${defaults.chart_label_mode === "callout" ? "selected" : ""}>Callout</option></select></label>
       `
       : step === 2
       ? `
       <label>Project Name <input name="name" value="${defaults.name}" required /></label>
-      <label>Client <input name="client" value="${defaults.client}" /></label>
       <label>Project Number <input name="project_number" value="${defaults.project_number}" /></label>
       <label>Location <input name="location" value="${defaults.location}" /></label>
-      <label>Project Stage <input name="project_stage" value="${defaults.project_stage}" /></label>
-      <label>Project Value <input type="number" min="0" name="baseline_cost" value="${defaults.baseline_cost}" /></label>
-      <label>Commercial Contingency <input type="number" min="0" name="contingency" value="${defaults.contingency}" /></label>
+      <label>Project Stage <select name="project_stage">${renderStageOptions(defaults.project_stage)}</select></label>
+      <label>Project Value <input type="text" name="baseline_cost" data-format="comma" value="${formatCommas(defaults.baseline_cost)}" /></label>
+      <label>Commercial Contingency <input type="text" name="contingency" data-format="comma" value="${formatCommas(defaults.contingency)}" /></label>
       <label>Completion Date <input type="date" name="completion_date" value="${defaults.completion_date}" /></label>
       <label>Schedule Contingency Days <input type="number" min="0" step="0.1" name="contingency_days" value="${defaults.contingency_days}" /></label>
       <label>Target P Value <input type="number" min="0" max="100" step="10" name="target_p_value" value="${defaults.target_p_value}" /></label>
       `
       : `
-      <label>Collaboration Lead <input name="collaboration_lead" value="${defaults.collaboration_lead}" /></label>
-      <label>Collaboration Email <input type="email" name="collaboration_email" value="${defaults.collaboration_email}" /></label>
-      <p class="tile-label">These collaboration fields help set ownership context for the project.</p>
+      <label>Cost Calibration Low (%) <input type="number" min="0" step="0.1" name="cost_calibration_low_pct" value="${defaults.cost_calibration_low_pct}" /></label>
+      <label>Cost Calibration Medium (%) <input type="number" min="0" step="0.1" name="cost_calibration_medium_pct" value="${defaults.cost_calibration_medium_pct}" /></label>
+      <label>Cost Calibration High (%) <input type="number" min="0" step="0.1" name="cost_calibration_high_pct" value="${defaults.cost_calibration_high_pct}" /></label>
+      <p class="tile-label">Cost preview (Low / Medium / High): ${costValuePreview(defaults.cost_calibration_low_pct)} / ${costValuePreview(defaults.cost_calibration_medium_pct)} / ${costValuePreview(defaults.cost_calibration_high_pct)}</p>
+      <label>Days Calibration Low <input type="number" min="0" step="1" name="days_calibration_low" value="${defaults.days_calibration_low}" /></label>
+      <label>Days Calibration Medium <input type="number" min="0" step="1" name="days_calibration_medium" value="${defaults.days_calibration_medium}" /></label>
+      <label>Days Calibration High <input type="number" min="0" step="1" name="days_calibration_high" value="${defaults.days_calibration_high}" /></label>
       `;
 
     backdrop.innerHTML = `
@@ -1222,40 +1276,65 @@ function openNewProjectWizard() {
       </div>
     `;
 
-    const form = backdrop.querySelector('.wizard-form');
-    form.querySelectorAll('input, select').forEach((field) => {
-      field.oninput = field.onchange = (event) => {
+    const form = backdrop.querySelector(".wizard-form");
+    form.querySelectorAll("input, select").forEach((field) => {
+      const updateValue = (event) => {
         const key = event.target.name;
-        defaults[key] = event.target.type === 'number' ? Number(event.target.value || 0) : event.target.value;
+        if (event.target.dataset.format === "comma") {
+          const parsed = parseCommaNumber(event.target.value);
+          defaults[key] = parsed;
+          event.target.value = formatCommas(parsed);
+          return;
+        }
+
+        defaults[key] = event.target.type === "number" ? Number(event.target.value || 0) : event.target.value;
       };
+
+      field.addEventListener("change", updateValue);
+      field.addEventListener("input", updateValue);
     });
 
-    backdrop.querySelector('#wizard-cancel').onclick = () => backdrop.remove();
-    if (step > 1) backdrop.querySelector('#wizard-back').onclick = () => { step -= 1; renderStep(); };
-    if (step < 3) backdrop.querySelector('#wizard-next').onclick = () => { step += 1; renderStep(); };
+    backdrop.querySelector("#wizard-cancel").onclick = () => backdrop.remove();
+    if (step > 1) {
+      backdrop.querySelector("#wizard-back").onclick = () => {
+        step -= 1;
+        renderStep();
+      };
+    }
+    if (step < 3) {
+      backdrop.querySelector("#wizard-next").onclick = () => {
+        step += 1;
+        renderStep();
+      };
+    }
+
     if (step === 3) {
-      backdrop.querySelector('#wizard-save').onclick = () => {
-        if (!String(defaults.name || '').trim()) {
-          alert('Project name is required.');
+      backdrop.querySelector("#wizard-save").onclick = () => {
+        if (!String(defaults.name || "").trim()) {
+          alert("Project name is required.");
           step = 2;
           renderStep();
           return;
         }
+
         const id = `p-${Date.now()}`;
         const newProject = {
-          ...structuredClone(state.data.project),
+          ...structuredClone(defaultData.project),
           ...defaults,
           id,
-          name: String(defaults.name || '').trim(),
+          name: String(defaults.name || "").trim(),
+          target_p_value: Math.max(0, Math.min(100, Math.round(Number(defaults.target_p_value || 0) / 10) * 10)),
           updated_at: new Date().toISOString()
         };
+
         state.data.portfolio_projects = [...(state.data.portfolio_projects || []), newProject];
         state.data.project = newProject;
         state.activeProjectId = id;
-        state.page = 'Dashboard';
+        state.page = "Dashboard";
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
         backdrop.remove();
         render();
+        animateProjectLoad();
       };
     }
   };
@@ -1359,7 +1438,7 @@ function renderDashboard() {
     [
       makeCard("Project Name", state.data.project.name || "N/A"),
       makeCard("Client", state.data.project.client || "N/A"),
-      makeCard("Project Stage", state.data.project.project_stage || "Planning"),
+      makeCard("Project Stage", state.data.project.project_stage || "Feasibility"),
       makeCard("Project Value", fmtNumber(state.data.project.baseline_cost, true)),
       makeCard("Completion Date", formatDateOnly(state.data.project.completion_date))
     ],
@@ -1445,7 +1524,7 @@ function renderSettings() {
       <form id="general-settings-form" class="settings-list-form">
         <div class="setting-row">
           <label for="settings-currency">Currency</label>
-          <input id="settings-currency" name="currency" value="${state.data.project.currency}" required />
+          <select id="settings-currency" name="currency">${currencyOptions.map((currency) => `<option value="${currency}" ${state.data.project.currency === currency ? "selected" : ""}>${currency}</option>`).join("")}</select>
         </div>
         <div class="setting-row">
           <label for="settings-units">Schedule Units</label>
@@ -1457,13 +1536,12 @@ function renderSettings() {
         <div class="setting-row">
           <label for="settings-number-scale">Rounding / Scale</label>
           <select id="settings-number-scale" name="number_scale">
-            <option value="millions" ${state.data.project.number_scale === "millions" ? "selected" : ""}>Millions (e.g. $12.00m)</option>
-            <option value="full" ${state.data.project.number_scale === "full" ? "selected" : ""}>Full Value</option>
+            ${numberScaleOptions.map((option) => `<option value="${option.value}" ${state.data.project.number_scale === option.value ? "selected" : ""}>${option.label}</option>`).join("")}
           </select>
         </div>
         <div class="setting-row">
           <label for="settings-currency-decimals">Currency Decimals</label>
-          <input id="settings-currency-decimals" name="currency_decimals" type="number" min="0" max="4" step="1" value="${state.data.project.currency_decimals ?? 2}" required />
+          <select id="settings-currency-decimals" name="currency_decimals">${[0, 1, 2, 3, 4].map((decimal) => `<option value="${decimal}" ${Number(state.data.project.currency_decimals ?? 2) === decimal ? "selected" : ""}>${decimal}</option>`).join("")}</select>
         </div>
         <div class="setting-row">
           <label for="settings-date-format">Date Format</label>
@@ -1499,10 +1577,6 @@ function renderSettings() {
           <input id="settings-project-name" name="name" value="${state.data.project.name}" required />
         </div>
         <div class="setting-row">
-          <label for="settings-client">Client</label>
-          <input id="settings-client" name="client" value="${state.data.project.client || ""}" />
-        </div>
-        <div class="setting-row">
           <label for="settings-project-number">Project Number</label>
           <input id="settings-project-number" name="project_number" value="${state.data.project.project_number || ""}" />
         </div>
@@ -1512,7 +1586,7 @@ function renderSettings() {
         </div>
         <div class="setting-row">
           <label for="settings-project-stage">Project Stage</label>
-          <input id="settings-project-stage" name="project_stage" value="${state.data.project.project_stage || "Planning"}" />
+          <select id="settings-project-stage" name="project_stage">${projectStages.map((stage) => `<option value="${stage}" ${state.data.project.project_stage === stage ? "selected" : ""}>${stage}</option>`).join("")}</select>
         </div>
         <div class="setting-row">
           <label for="settings-project-value">Project Value</label>
@@ -1595,7 +1669,6 @@ function renderSettings() {
     state.data.project = {
       ...state.data.project,
       name: form.get("name"),
-      client: form.get("client"),
       project_number: form.get("project_number"),
       location: form.get("location"),
       project_stage: form.get("project_stage"),

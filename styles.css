@@ -897,3 +897,21 @@ body.dark-theme .tornado-bar-high {
     grid-template-columns: 1fr;
   }
 }
+
+
+.project-switch-anim {
+  animation: projectSwitchReveal 2s ease;
+}
+
+@keyframes projectSwitchReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
