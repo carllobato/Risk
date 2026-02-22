@@ -161,6 +161,13 @@ const state = {
       fromResult: null,
       toResult: null
     }
+  },
+  riskRegister: {
+    sortBy: "updated_at",
+    sortDir: "desc",
+    filterText: "",
+    filterStatus: "All",
+    filterCategory: "All"
   }
 };
 
@@ -193,11 +200,34 @@ function handleThemeToggle(event) {
   applyTheme(nextTheme);
 }
 
+function getRiskCodeNumber(riskCode) {
+  if (!riskCode) {
+    return 0;
+  }
+  const match = String(riskCode).match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function makeRiskCode(number) {
+  return `R-${String(number).padStart(3, "0")}`;
+}
+
+function ensureRiskCodes(data) {
+  let maxCode = data.risks.reduce((max, risk) => Math.max(max, getRiskCodeNumber(risk.risk_code)), 0);
+  data.risks.forEach((risk) => {
+    if (!risk.risk_code) {
+      maxCode += 1;
+      risk.risk_code = makeRiskCode(maxCode);
+    }
+  });
+  return data;
+}
+
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
-    return structuredClone(defaultData);
+    return ensureRiskCodes(structuredClone(defaultData));
   }
 
   try {
@@ -236,10 +266,10 @@ function loadData() {
     if (!parsed.project.project_stage) {
       parsed.project.project_stage = "Planning";
     }
-    return parsed;
+    return ensureRiskCodes(parsed);
   } catch {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
-    return structuredClone(defaultData);
+    return ensureRiskCodes(structuredClone(defaultData));
   }
 }
 
@@ -1209,28 +1239,113 @@ function renderSettings() {
   pageContent.appendChild(wrapper);
 }
 
+function getRiskSortValue(risk, key) {
+  if (key === "probability" || key === "impact_cost_mid" || key === "impact_days_mid") {
+    return Number(risk[key] || 0);
+  }
+  if (key === "updated_at") {
+    return new Date(risk.updated_at || 0).getTime();
+  }
+  if (key === "risk_code") {
+    return getRiskCodeNumber(risk.risk_code);
+  }
+  return String(risk[key] || "").toLowerCase();
+}
+
+function getRiskRegisterRows() {
+  const { filterText, filterStatus, filterCategory, sortBy, sortDir } = state.riskRegister;
+  const text = filterText.trim().toLowerCase();
+  return state.data.risks
+    .filter((risk) => (filterStatus === "All" ? true : risk.status === filterStatus))
+    .filter((risk) => (filterCategory === "All" ? true : risk.category === filterCategory))
+    .filter((risk) => {
+      if (!text) {
+        return true;
+      }
+      return [risk.risk_code, risk.title, risk.owner, risk.category, risk.status].some((value) =>
+        String(value || "").toLowerCase().includes(text)
+      );
+    })
+    .sort((a, b) => {
+      const av = getRiskSortValue(a, sortBy);
+      const bv = getRiskSortValue(b, sortBy);
+      const base = av > bv ? 1 : av < bv ? -1 : 0;
+      return sortDir === "asc" ? base : -base;
+    });
+}
+
+function setRiskSort(sortBy) {
+  if (state.riskRegister.sortBy === sortBy) {
+    state.riskRegister.sortDir = state.riskRegister.sortDir === "asc" ? "desc" : "asc";
+  } else {
+    state.riskRegister.sortBy = sortBy;
+    state.riskRegister.sortDir = "asc";
+  }
+  render();
+}
+
+function openNextRisk(currentRiskId) {
+  const rows = getRiskRegisterRows();
+  const currentIndex = rows.findIndex((risk) => risk.id === currentRiskId);
+  if (currentIndex < 0 || currentIndex + 1 >= rows.length) {
+    return;
+  }
+  openRiskModal(rows[currentIndex + 1].id);
+}
+
 function renderRiskRegister() {
   const section = document.createElement("div");
   section.className = "card";
-  section.innerHTML = `<div class="actions"><h3 style="margin-right:auto;">Risk Register</h3><button id="add-risk">Add Risk</button></div>`;
+
+  const rows = getRiskRegisterRows();
+  const sortArrow = (key) =>
+    state.riskRegister.sortBy === key ? (state.riskRegister.sortDir === "asc" ? " ↑" : " ↓") : "";
+
+  section.innerHTML = `
+    <div class="actions">
+      <h3 style="margin-right:auto;">Risk Register</h3>
+      <button id="add-risk">Add Risk</button>
+    </div>
+    <div class="actions" style="margin-top:0.5rem; flex-wrap:wrap;">
+      <input id="risk-filter-text" placeholder="Filter risks..." value="${state.riskRegister.filterText}" style="max-width:240px;" />
+      <select id="risk-filter-status">
+        <option value="All" ${state.riskRegister.filterStatus === "All" ? "selected" : ""}>All Statuses</option>
+        ${statuses.map((status) => `<option value="${status}" ${state.riskRegister.filterStatus === status ? "selected" : ""}>${status}</option>`).join("")}
+      </select>
+      <select id="risk-filter-category">
+        <option value="All" ${state.riskRegister.filterCategory === "All" ? "selected" : ""}>All Categories</option>
+        ${categories.map((category) => `<option value="${category}" ${state.riskRegister.filterCategory === category ? "selected" : ""}>${category}</option>`).join("")}
+      </select>
+    </div>
+  `;
 
   const table = document.createElement("table");
   table.innerHTML = `
     <thead>
       <tr>
-        <th>Title</th><th>Category</th><th>Owner</th><th>Status</th><th>Probability</th><th>Cost Mid</th><th>Days Mid</th><th>Updated</th><th>Actions</th>
+        <th data-sort="risk_code">Risk ID${sortArrow("risk_code")}</th>
+        <th data-sort="title">Title${sortArrow("title")}</th>
+        <th data-sort="category">Category${sortArrow("category")}</th>
+        <th data-sort="owner">Owner${sortArrow("owner")}</th>
+        <th data-sort="status">Status${sortArrow("status")}</th>
+        <th data-sort="probability">Probability${sortArrow("probability")}</th>
+        <th data-sort="impact_cost_mid">Cost Mid${sortArrow("impact_cost_mid")}</th>
+        <th data-sort="impact_days_mid">Days Mid${sortArrow("impact_days_mid")}</th>
+        <th data-sort="updated_at">Updated${sortArrow("updated_at")}</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
-      ${state.data.risks
+      ${rows
         .map(
           (risk) => `
         <tr data-risk-id="${risk.id}">
+          <td>${risk.risk_code || "-"}</td>
           <td>${risk.title}</td>
           <td>${risk.category}</td>
           <td>${risk.owner}</td>
           <td><span class="status-badge">${risk.status}</span></td>
-          <td>${risk.probability.toFixed(2)}</td>
+          <td>${Number(risk.probability || 0).toFixed(2)}</td>
           <td>${fmtNumber(risk.impact_cost_mid, true)}</td>
           <td>${risk.impact_days_mid}</td>
           <td>${fmtDate(risk.updated_at)}</td>
@@ -1241,6 +1356,11 @@ function renderRiskRegister() {
         .join("")}
     </tbody>
   `;
+
+  table.querySelectorAll("thead th[data-sort]").forEach((th) => {
+    th.style.cursor = "pointer";
+    th.onclick = () => setRiskSort(th.dataset.sort);
+  });
 
   table.querySelectorAll("tbody tr").forEach((row) => {
     row.onclick = (event) => {
@@ -1262,12 +1382,25 @@ function renderRiskRegister() {
     };
   });
 
+  section.querySelector("#risk-filter-text").oninput = (event) => {
+    state.riskRegister.filterText = event.target.value;
+    render();
+  };
+  section.querySelector("#risk-filter-status").onchange = (event) => {
+    state.riskRegister.filterStatus = event.target.value;
+    render();
+  };
+  section.querySelector("#risk-filter-category").onchange = (event) => {
+    state.riskRegister.filterCategory = event.target.value;
+    render();
+  };
+
   section.querySelector("#add-risk").onclick = () => openRiskModal();
   section.appendChild(table);
   pageContent.appendChild(section);
 }
 
-function buildRiskForm(risk) {
+function buildRiskForm(risk, riskId = null) {
   riskForm.innerHTML = `
     <div class="form-grid">
       <label>Title <input name="title" required value="${risk.title || ""}" /></label>
@@ -1297,6 +1430,7 @@ function buildRiskForm(risk) {
     <div class="actions">
       <button type="submit">Save Risk</button>
       <button type="button" id="cancel-risk" class="secondary">Cancel</button>
+      <button type="button" id="next-risk" class="secondary">Next Risk</button>
     </div>
   `;
 
@@ -1311,12 +1445,19 @@ function buildRiskForm(risk) {
   };
 
   riskForm.querySelector("#cancel-risk").onclick = closeRiskModal;
+  const nextBtn = riskForm.querySelector("#next-risk");
+  if (!riskId) {
+    nextBtn.classList.add("hidden");
+  } else {
+    nextBtn.onclick = () => openNextRisk(riskId);
+  }
 
   riskForm.onsubmit = (event) => {
     event.preventDefault();
     const form = new FormData(riskForm);
     const payload = {
       id: risk.id || crypto.randomUUID(),
+      risk_code: risk.risk_code || makeRiskCode(state.data.risks.reduce((max, item) => Math.max(max, getRiskCodeNumber(item.risk_code)), 0) + 1),
       project_id: state.data.project.id,
       title: form.get("title"),
       description: form.get("description"),
@@ -1351,7 +1492,7 @@ function openRiskModal(riskId = null) {
   state.editingRiskId = riskId;
   const risk = state.data.risks.find((item) => item.id === riskId) || {};
   riskModalTitle.textContent = riskId ? "Edit Risk" : "Add Risk";
-  buildRiskForm(risk);
+  buildRiskForm(risk, riskId);
   modalBackdrop.classList.remove("hidden");
 }
 
